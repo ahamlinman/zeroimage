@@ -29,7 +29,7 @@ var (
 	flagEntrypoint = flag.String("entrypoint", "", "Path to the entrypoint binary")
 	flagOS         = flag.String("os", runtime.GOOS, "OS to write to the image manifest")
 	flagArch       = flag.String("arch", runtime.GOARCH, "Architecture to write to the image manifest")
-	flagOutput     = flag.String("output", "", "Path to write the .tar output archive to")
+	flagOutput     = flag.String("output", "", "Path to write the tar output archive to")
 )
 
 func main() {
