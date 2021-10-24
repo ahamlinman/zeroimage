@@ -11,6 +11,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
@@ -27,7 +28,8 @@ type Layer struct {
 	Blob       []byte
 }
 
-// AppendLayer adds the provided layer to the image.
+// AppendLayer adds the provided layer to the image, updating the diff IDs and
+// history in the image configuration.
 //
 // If the digest or size fields of the layer's descriptor are empty, AppendLayer
 // will populate them from the provided blob.
@@ -47,8 +49,8 @@ func (img *Image) AppendLayer(layer Layer) {
 	})
 }
 
-// LayerBuilder provides an interface to create a tar-based filesystem layer in
-// an image.
+// LayerBuilder provides an interface to create a new filesystem layer in an
+// image.
 type LayerBuilder struct {
 	*tarbuild.Builder
 
@@ -59,8 +61,8 @@ type LayerBuilder struct {
 	gzipHash hash.Hash
 }
 
-// NewLayer creates a tar archive builder that will append a new filesystem
-// layer to img when closed.
+// NewLayer returns a tar archive builder that will append a new layer to img
+// when closed.
 func (img *Image) NewLayer() *LayerBuilder {
 	lb := &LayerBuilder{
 		img:      img,
@@ -116,37 +118,27 @@ func (iw *imageWriter) WriteArchive() error {
 		iw.addBlob(layer.Descriptor.Digest, layer.Blob)
 	}
 
-	config := iw.image.Config
+	config := iw.image.Config // shallow copy
 	config.Created = now()
-	configDescriptor, err := iw.addJSONBlob(specsv1.MediaTypeImageConfig, config)
-	if err != nil {
-		return err
-	}
 
 	manifest := specsv1.Manifest{
 		Versioned: specs.Versioned{SchemaVersion: 2},
-		Config:    configDescriptor,
+		Config:    iw.addJSONBlob(specsv1.MediaTypeImageConfig, config),
 	}
 	for _, layer := range iw.image.Layers {
 		manifest.Layers = append(manifest.Layers, layer.Descriptor)
 	}
-	manifestDescriptor, err := iw.addJSONBlob(specsv1.MediaTypeImageManifest, manifest)
-	if err != nil {
-		return err
-	}
 
-	index := specsv1.Index{
+	iw.addJSONFile("index.json", specsv1.Index{
 		Versioned: specs.Versioned{SchemaVersion: 2},
-		Manifests: []specsv1.Descriptor{manifestDescriptor},
-	}
-	if err := iw.addJSONFile("index.json", index); err != nil {
-		return err
-	}
+		Manifests: []specsv1.Descriptor{
+			iw.addJSONBlob(specsv1.MediaTypeImageManifest, manifest),
+		},
+	})
 
-	layout := specsv1.ImageLayout{Version: specsv1.ImageLayoutVersion}
-	if err := iw.addJSONFile(specsv1.ImageLayoutFile, layout); err != nil {
-		return err
-	}
+	iw.addJSONFile(specsv1.ImageLayoutFile, specsv1.ImageLayout{
+		Version: specsv1.ImageLayoutVersion,
+	})
 
 	return iw.tar.Close()
 }
@@ -157,27 +149,20 @@ func (iw *imageWriter) addBlob(digest digest.Digest, blob []byte) {
 	iw.tar.AddFileContent(path, blob)
 }
 
-func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) (specsv1.Descriptor, error) {
-	encoded, err := json.Marshal(v)
-	if err != nil {
-		return specsv1.Descriptor{}, err
-	}
+func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) specsv1.Descriptor {
+	encoded := mustJSONMarshal(v)
 	desc := specsv1.Descriptor{
 		MediaType: mediaType,
 		Digest:    digest.FromBytes(encoded),
 		Size:      int64(len(encoded)),
 	}
 	iw.addBlob(desc.Digest, encoded)
-	return desc, nil
+	return desc
 }
 
-func (iw *imageWriter) addJSONFile(path string, v interface{}) error {
-	encoded, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
+func (iw *imageWriter) addJSONFile(path string, v interface{}) {
+	encoded := mustJSONMarshal(v)
 	iw.tar.AddFileContent(path, encoded)
-	return nil
 }
 
 func (iw *imageWriter) ensureAlgorithmDirectory(alg digest.Algorithm) {
@@ -186,6 +171,20 @@ func (iw *imageWriter) ensureAlgorithmDirectory(alg digest.Algorithm) {
 	}
 	iw.tar.AddDirectory("blobs/" + string(alg) + "/")
 	iw.hasAlgorithmDir[alg] = true
+}
+
+// mustJSONMarshal returns the JSON encoding of v, or panics if v cannot be
+// encoded as JSON.
+//
+// JSON encoding is generally not expected to fail for the Go types defined by
+// the OCI image spec, as they are explicitly designed to represent JSON
+// documents.
+func mustJSONMarshal(v interface{}) []byte {
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return encoded
 }
 
 func now() *time.Time {
