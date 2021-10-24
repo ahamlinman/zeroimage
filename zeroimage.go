@@ -58,6 +58,7 @@ func main() {
 	if err := layerBuilder.Close(); err != nil {
 		log.Fatal("building layer archive:", err)
 	}
+	layerTarDigest := digest.FromBytes(layerTar.Bytes())
 
 	var layerZip bytes.Buffer
 	layerZipWriter := gzip.NewWriter(&layerZip)
@@ -79,7 +80,7 @@ func main() {
 		},
 		RootFS: specsv1.RootFS{
 			Type:    "layers",
-			DiffIDs: []digest.Digest{digest.FromBytes(layerTar.Bytes())},
+			DiffIDs: []digest.Digest{layerTarDigest},
 		},
 	}
 
