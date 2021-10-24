@@ -82,6 +82,10 @@ func main() {
 			Type:    "layers",
 			DiffIDs: []digest.Digest{layerTarDigest},
 		},
+		History: []specsv1.History{{
+			Created:   &now,
+			CreatedBy: "zeroimage",
+		}},
 	}
 
 	imageConfigJSON, err := json.Marshal(imageConfig)
