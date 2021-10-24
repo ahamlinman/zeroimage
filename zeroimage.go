@@ -20,6 +20,10 @@ import (
 	"runtime"
 	"time"
 
+	// Required by github.com/opencontainers/go-digest
+	_ "crypto/sha256"
+	_ "crypto/sha512"
+
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
