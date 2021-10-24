@@ -9,7 +9,6 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -22,6 +21,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
 var (
@@ -32,8 +33,6 @@ var (
 )
 
 func main() {
-	// TODO: uhhhhhh refactor every single line of this
-
 	flag.Parse()
 	if *flagEntrypoint == "" || *flagOutput == "" {
 		flag.Usage()
@@ -45,28 +44,13 @@ func main() {
 		log.Fatal("reading entrypoint:", err)
 	}
 
-	entrypointStat, err := entrypoint.Stat()
-	if err != nil {
-		log.Fatal("reading entrypoint:", err)
-	}
-
 	entrypointPath := filepath.Base(*flagEntrypoint)
 
 	var layerTar bytes.Buffer
-	layerWriter := tar.NewWriter(&layerTar)
-	if err := layerWriter.WriteHeader(&tar.Header{
-		Name:    entrypointPath,
-		Size:    entrypointStat.Size(),
-		Mode:    int64(entrypointStat.Mode()),
-		ModTime: entrypointStat.ModTime(),
-	}); err != nil {
-		log.Fatal("writing entrypoint header:", err)
-	}
-	if _, err := io.Copy(layerWriter, entrypoint); err != nil {
-		log.Fatal("writing entrypoint to layer:", err)
-	}
-	if err := layerWriter.Close(); err != nil {
-		log.Fatal("writing layer archive:", err)
+	layerBuilder := tarbuild.NewBuilder(&layerTar)
+	layerBuilder.AddFile(entrypointPath, entrypoint)
+	if err := layerBuilder.Close(); err != nil {
+		log.Fatal("building layer archive:", err)
 	}
 
 	var layerZip bytes.Buffer
@@ -139,75 +123,21 @@ func main() {
 	if err != nil {
 		log.Fatal("opening output:", err)
 	}
-	tw := tar.NewWriter(output)
 
-	if err := tw.WriteHeader(&tar.Header{Name: "blobs/", Mode: 040755}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-	if err := tw.WriteHeader(&tar.Header{Name: "blobs/sha256/", Mode: 040755}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "blobs/sha256/" + sha256Hex(layerZip.Bytes()),
-		Size: int64(layerZip.Len()),
-		Mode: 0644,
-	}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-	if _, err := io.Copy(tw, &layerZip); err != nil {
-		log.Fatal("writing output:", err)
+	builder := tarbuild.NewBuilder(output)
+	builder.AddDirectory("blobs/")
+	builder.AddDirectory("blobs/sha256/")
+	builder.AddFileContent("blobs/sha256/"+sha256Hex(layerZip.Bytes()), layerZip.Bytes())
+	builder.AddFileContent("blobs/sha256/"+sha256Hex(configJSON), configJSON)
+	builder.AddFileContent("blobs/sha256/"+sha256Hex(manifestJSON), manifestJSON)
+	builder.AddFileContent("index.json", indexJSON)
+	builder.AddFileContent("oci-layout", layoutJSON)
+	if err := builder.Close(); err != nil {
+		log.Fatal("building image:", err)
 	}
 
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "blobs/sha256/" + sha256Hex(configJSON),
-		Size: int64(len(configJSON)),
-		Mode: 0644,
-	}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-	if _, err := io.Copy(tw, bytes.NewReader(configJSON)); err != nil {
-		log.Fatal("writing output:", err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "blobs/sha256/" + sha256Hex(manifestJSON),
-		Size: int64(len(manifestJSON)),
-		Mode: 0644,
-	}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-	if _, err := io.Copy(tw, bytes.NewReader(manifestJSON)); err != nil {
-		log.Fatal("writing output:", err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "index.json",
-		Size: int64(len(indexJSON)),
-		Mode: 0644,
-	}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-	if _, err := io.Copy(tw, bytes.NewReader(indexJSON)); err != nil {
-		log.Fatal("writing output:", err)
-	}
-
-	if err := tw.WriteHeader(&tar.Header{
-		Name: "oci-layout",
-		Size: int64(len(layoutJSON)),
-		Mode: 0644,
-	}); err != nil {
-		log.Fatal("writing output:", err)
-	}
-	if _, err := io.Copy(tw, bytes.NewReader(layoutJSON)); err != nil {
-		log.Fatal("writing output:", err)
-	}
-
-	if err := tw.Close(); err != nil {
-		log.Fatal("writing output:", err)
-	}
 	if err := output.Close(); err != nil {
-		log.Fatal("writing output:", err)
+		log.Fatal("writing image:", err)
 	}
 }
 
