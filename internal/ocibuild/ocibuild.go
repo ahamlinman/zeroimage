@@ -1,7 +1,10 @@
 package ocibuild
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"hash"
 	"io"
 	"time"
 
@@ -42,6 +45,51 @@ func (img *Image) AppendLayer(layer Layer) {
 		Created:   now(),
 		CreatedBy: "zeroimage",
 	})
+}
+
+// LayerBuilder provides an interface to create a tar-based filesystem layer in
+// an image.
+type LayerBuilder struct {
+	*tarbuild.Builder
+
+	img      *Image
+	buf      bytes.Buffer
+	zw       *gzip.Writer
+	tarHash  hash.Hash
+	gzipHash hash.Hash
+}
+
+// NewLayer creates a tar archive builder that will append a new filesystem
+// layer to img when closed.
+func (img *Image) NewLayer() *LayerBuilder {
+	lb := &LayerBuilder{
+		img:      img,
+		tarHash:  digest.Canonical.Hash(),
+		gzipHash: digest.Canonical.Hash(),
+	}
+	lb.zw = gzip.NewWriter(io.MultiWriter(&lb.buf, lb.gzipHash))
+	lb.Builder = tarbuild.NewBuilder(io.MultiWriter(lb.zw, lb.tarHash))
+	return lb
+}
+
+// Close appends the layer created by lb to the associated image.
+func (lb *LayerBuilder) Close() error {
+	if err := lb.Builder.Close(); err != nil {
+		return err
+	}
+	if err := lb.zw.Close(); err != nil {
+		return err
+	}
+	lb.img.AppendLayer(Layer{
+		Blob:   lb.buf.Bytes(),
+		DiffID: digest.NewDigest(digest.Canonical, lb.tarHash),
+		Descriptor: specsv1.Descriptor{
+			MediaType: specsv1.MediaTypeImageLayerGzip,
+			Digest:    digest.NewDigest(digest.Canonical, lb.gzipHash),
+			Size:      int64(lb.buf.Len()),
+		},
+	})
+	return nil
 }
 
 // WriteArchive writes the image as a tar archive to w, with the creation time

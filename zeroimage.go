@@ -7,10 +7,7 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"flag"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -20,11 +17,9 @@ import (
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 
-	"github.com/opencontainers/go-digest"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.alexhamlin.co/zeroimage/internal/ocibuild"
-	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
 var (
@@ -41,28 +36,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	entrypointPath := filepath.Base(*flagEntrypoint)
 	entrypoint, err := os.Open(*flagEntrypoint)
 	if err != nil {
 		log.Fatal("reading entrypoint:", err)
-	}
-
-	entrypointPath := filepath.Base(*flagEntrypoint)
-
-	var layerTar bytes.Buffer
-	layerBuilder := tarbuild.NewBuilder(&layerTar)
-	layerBuilder.AddFile(entrypointPath, entrypoint)
-	if err := layerBuilder.Close(); err != nil {
-		log.Fatal("building layer archive:", err)
-	}
-	layerTarDigest := digest.FromBytes(layerTar.Bytes())
-
-	var layerZip bytes.Buffer
-	layerZipWriter := gzip.NewWriter(&layerZip)
-	if _, err := io.Copy(layerZipWriter, &layerTar); err != nil {
-		log.Fatal("compressing layer:", err)
-	}
-	if err := layerZipWriter.Close(); err != nil {
-		log.Fatal("compressing layer:", err)
 	}
 
 	image := ocibuild.Image{
@@ -70,19 +47,16 @@ func main() {
 			OS:           *flagOS,
 			Architecture: *flagArch,
 			Config: specsv1.ImageConfig{
-				Entrypoint: []string{"/" + entrypointPath},
+				Entrypoint: []string{"/" + filepath.Base(*flagEntrypoint)},
 			},
 		},
 	}
-	image.AppendLayer(ocibuild.Layer{
-		Blob:   layerZip.Bytes(),
-		DiffID: layerTarDigest,
-		Descriptor: specsv1.Descriptor{
-			MediaType: specsv1.MediaTypeImageLayerGzip,
-			Digest:    digest.FromBytes(layerZip.Bytes()),
-			Size:      int64(layerZip.Len()),
-		},
-	})
+
+	layer := image.NewLayer()
+	layer.AddFile(entrypointPath, entrypoint)
+	if err := layer.Close(); err != nil {
+		log.Fatal("building entrypoint layer:", err)
+	}
 
 	output, err := os.Create(*flagOutput)
 	if err != nil {
