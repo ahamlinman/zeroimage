@@ -11,8 +11,6 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"io"
@@ -21,6 +19,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
+	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
@@ -61,36 +63,39 @@ func main() {
 	if err := layerZipWriter.Close(); err != nil {
 		log.Fatal("compressing layer:", err)
 	}
+	layerZipDigest := digest.FromBytes(layerZip.Bytes())
 
-	config := ociConfig{
-		Created:      time.Now().Format(time.RFC3339),
+	now := time.Now()
+	imageConfig := specsv1.Image{
+		Created:      &now,
 		Architecture: *flagArch,
 		OS:           *flagOS,
-		Config: ociConfigExecParams{
+		Config: specsv1.ImageConfig{
 			Entrypoint: []string{"/" + entrypointPath},
 		},
-		RootFS: ociConfigRootFS{
+		RootFS: specsv1.RootFS{
 			Type:    "layers",
-			DiffIDs: []string{"sha256:" + sha256Hex(layerTar.Bytes())},
+			DiffIDs: []digest.Digest{digest.FromBytes(layerTar.Bytes())},
 		},
 	}
 
-	configJSON, err := json.Marshal(config)
+	imageConfigJSON, err := json.Marshal(imageConfig)
 	if err != nil {
 		log.Fatal("encoding config:", err)
 	}
+	imageConfigDigest := digest.FromBytes(imageConfigJSON)
 
-	manifest := ociManifest{
-		SchemaVersion: 2,
-		Config: ociDescriptor{
-			MediaType: "application/vnd.oci.image.config.v1+json",
-			Digest:    "sha256:" + sha256Hex(configJSON),
-			Size:      len(configJSON),
+	manifest := specsv1.Manifest{
+		Versioned: specs.Versioned{SchemaVersion: 2},
+		Config: specsv1.Descriptor{
+			MediaType: specsv1.MediaTypeImageConfig,
+			Digest:    imageConfigDigest,
+			Size:      int64(len(imageConfigJSON)),
 		},
-		Layers: []ociDescriptor{{
-			MediaType: "application/vnd.oci.image.layer.v1.tar+gzip",
-			Digest:    "sha256:" + sha256Hex(layerZip.Bytes()),
-			Size:      layerZip.Len(),
+		Layers: []specsv1.Descriptor{{
+			MediaType: specsv1.MediaTypeImageLayerGzip,
+			Digest:    layerZipDigest,
+			Size:      int64(layerZip.Len()),
 		}},
 	}
 
@@ -98,13 +103,14 @@ func main() {
 	if err != nil {
 		log.Fatal("encoding manifest:", err)
 	}
+	manifestDigest := digest.FromBytes(manifestJSON)
 
-	index := ociIndex{
-		SchemaVersion: 2,
-		Manifests: []ociDescriptor{{
-			MediaType: "application/vnd.oci.image.manifest.v1+json",
-			Digest:    "sha256:" + sha256Hex(manifestJSON),
-			Size:      len(manifestJSON),
+	index := specsv1.Index{
+		Versioned: specs.Versioned{SchemaVersion: 2},
+		Manifests: []specsv1.Descriptor{{
+			MediaType: specsv1.MediaTypeImageManifest,
+			Digest:    manifestDigest,
+			Size:      int64(len(manifestJSON)),
 		}},
 	}
 
@@ -113,7 +119,7 @@ func main() {
 		log.Fatal("encoding index:", err)
 	}
 
-	layout := ociLayout{ImageLayoutVersion: "1.0.0"}
+	layout := specsv1.ImageLayout{Version: specsv1.ImageLayoutVersion}
 	layoutJSON, err := json.Marshal(layout)
 	if err != nil {
 		log.Fatal("encoding layout:", err)
@@ -127,11 +133,11 @@ func main() {
 	builder := tarbuild.NewBuilder(output)
 	builder.AddDirectory("blobs/")
 	builder.AddDirectory("blobs/sha256/")
-	builder.AddFileContent("blobs/sha256/"+sha256Hex(layerZip.Bytes()), layerZip.Bytes())
-	builder.AddFileContent("blobs/sha256/"+sha256Hex(configJSON), configJSON)
-	builder.AddFileContent("blobs/sha256/"+sha256Hex(manifestJSON), manifestJSON)
+	builder.AddFileContent("blobs/sha256/"+layerZipDigest.Encoded(), layerZip.Bytes())
+	builder.AddFileContent("blobs/sha256/"+imageConfigDigest.Encoded(), imageConfigJSON)
+	builder.AddFileContent("blobs/sha256/"+manifestDigest.Encoded(), manifestJSON)
 	builder.AddFileContent("index.json", indexJSON)
-	builder.AddFileContent("oci-layout", layoutJSON)
+	builder.AddFileContent(specsv1.ImageLayoutFile, layoutJSON)
 	if err := builder.Close(); err != nil {
 		log.Fatal("building image:", err)
 	}
@@ -139,47 +145,4 @@ func main() {
 	if err := output.Close(); err != nil {
 		log.Fatal("writing image:", err)
 	}
-}
-
-func sha256Hex(b []byte) string {
-	sha := sha256.Sum256(b)
-	return hex.EncodeToString(sha[:])
-}
-
-type ociLayout struct {
-	ImageLayoutVersion string `json:"imageLayoutVersion"`
-}
-
-type ociIndex struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Manifests     []ociDescriptor `json:"manifests"`
-}
-
-type ociManifest struct {
-	SchemaVersion int             `json:"schemaVersion"`
-	Config        ociDescriptor   `json:"config"`
-	Layers        []ociDescriptor `json:"layers"`
-}
-
-type ociDescriptor struct {
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int    `json:"size"`
-}
-
-type ociConfig struct {
-	Created      string              `json:"created"`
-	Architecture string              `json:"architecture"`
-	OS           string              `json:"os"`
-	Config       ociConfigExecParams `json:"config"`
-	RootFS       ociConfigRootFS     `json:"rootfs"`
-}
-
-type ociConfigExecParams struct {
-	Entrypoint []string `json:"Entrypoint"`
-}
-
-type ociConfigRootFS struct {
-	Type    string   `json:"type"`
-	DiffIDs []string `json:"diff_ids"`
 }
