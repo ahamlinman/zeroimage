@@ -59,7 +59,5 @@ registry using [Skopeo][skopeo].
 
 ## Future Work
 
-- Docker is not happy when Skopeo tries to load one of these images into it.
-  Figure out what Docker thinks is missing.
 - Support starting from a base image instead of nothing at all, to enable
   building more "proper" distroless containers.
