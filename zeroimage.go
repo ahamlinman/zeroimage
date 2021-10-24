@@ -2,10 +2,8 @@
 // statically linked executable.
 //
 // The images produced by this tool may not satisfy the requirements of many
-// applications. Among other things, they do not include a standard directory
-// layout, user database, time zone database, TLS root certificates, etc. Your
-// application must be prepared to handle the fact that it is running in, quite
-// frankly, a broken environment.
+// applications. See the zeroimage README for a discussion of the caveats
+// associated with this tool.
 package main
 
 import (
