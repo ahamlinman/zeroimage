@@ -9,23 +9,21 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/json"
 	"flag"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	// Required by github.com/opencontainers/go-digest
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 
 	"github.com/opencontainers/go-digest"
-	"github.com/opencontainers/image-spec/specs-go"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"go.alexhamlin.co/zeroimage/internal/ocibuild"
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
@@ -66,89 +64,33 @@ func main() {
 	if err := layerZipWriter.Close(); err != nil {
 		log.Fatal("compressing layer:", err)
 	}
-	layerZipDigest := digest.FromBytes(layerZip.Bytes())
 
-	now := time.Now()
-	imageConfig := specsv1.Image{
-		Created:      &now,
-		Architecture: *flagArch,
-		OS:           *flagOS,
-		Config: specsv1.ImageConfig{
-			Entrypoint: []string{"/" + entrypointPath},
+	image := ocibuild.Image{
+		Config: specsv1.Image{
+			OS:           *flagOS,
+			Architecture: *flagArch,
+			Config: specsv1.ImageConfig{
+				Entrypoint: []string{"/" + entrypointPath},
+			},
 		},
-		RootFS: specsv1.RootFS{
-			Type:    "layers",
-			DiffIDs: []digest.Digest{layerTarDigest},
-		},
-		History: []specsv1.History{{
-			Created:   &now,
-			CreatedBy: "zeroimage",
-		}},
 	}
-
-	imageConfigJSON, err := json.Marshal(imageConfig)
-	if err != nil {
-		log.Fatal("encoding config:", err)
-	}
-	imageConfigDigest := digest.FromBytes(imageConfigJSON)
-
-	manifest := specsv1.Manifest{
-		Versioned: specs.Versioned{SchemaVersion: 2},
-		Config: specsv1.Descriptor{
-			MediaType: specsv1.MediaTypeImageConfig,
-			Digest:    imageConfigDigest,
-			Size:      int64(len(imageConfigJSON)),
-		},
-		Layers: []specsv1.Descriptor{{
+	image.AppendLayer(ocibuild.Layer{
+		Blob:   layerZip.Bytes(),
+		DiffID: layerTarDigest,
+		Descriptor: specsv1.Descriptor{
 			MediaType: specsv1.MediaTypeImageLayerGzip,
-			Digest:    layerZipDigest,
+			Digest:    digest.FromBytes(layerZip.Bytes()),
 			Size:      int64(layerZip.Len()),
-		}},
-	}
-
-	manifestJSON, err := json.Marshal(manifest)
-	if err != nil {
-		log.Fatal("encoding manifest:", err)
-	}
-	manifestDigest := digest.FromBytes(manifestJSON)
-
-	index := specsv1.Index{
-		Versioned: specs.Versioned{SchemaVersion: 2},
-		Manifests: []specsv1.Descriptor{{
-			MediaType: specsv1.MediaTypeImageManifest,
-			Digest:    manifestDigest,
-			Size:      int64(len(manifestJSON)),
-		}},
-	}
-
-	indexJSON, err := json.Marshal(index)
-	if err != nil {
-		log.Fatal("encoding index:", err)
-	}
-
-	layout := specsv1.ImageLayout{Version: specsv1.ImageLayoutVersion}
-	layoutJSON, err := json.Marshal(layout)
-	if err != nil {
-		log.Fatal("encoding layout:", err)
-	}
+		},
+	})
 
 	output, err := os.Create(*flagOutput)
 	if err != nil {
 		log.Fatal("opening output:", err)
 	}
-
-	builder := tarbuild.NewBuilder(output)
-	builder.AddDirectory("blobs/")
-	builder.AddDirectory("blobs/sha256/")
-	builder.AddFileContent("blobs/sha256/"+layerZipDigest.Encoded(), layerZip.Bytes())
-	builder.AddFileContent("blobs/sha256/"+imageConfigDigest.Encoded(), imageConfigJSON)
-	builder.AddFileContent("blobs/sha256/"+manifestDigest.Encoded(), manifestJSON)
-	builder.AddFileContent("index.json", indexJSON)
-	builder.AddFileContent(specsv1.ImageLayoutFile, layoutJSON)
-	if err := builder.Close(); err != nil {
-		log.Fatal("building image:", err)
+	if err := image.WriteArchive(output); err != nil {
+		log.Fatal("writing image:", err)
 	}
-
 	if err := output.Close(); err != nil {
 		log.Fatal("writing image:", err)
 	}
