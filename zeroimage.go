@@ -37,26 +37,26 @@ func main() {
 	}
 
 	entrypointPath := filepath.Base(*flagEntrypoint)
-	entrypoint, err := os.Open(*flagEntrypoint)
-	if err != nil {
-		log.Fatal("reading entrypoint:", err)
-	}
-
 	image := ocibuild.Image{
 		Config: specsv1.Image{
 			OS:           *flagOS,
 			Architecture: *flagArch,
 			Config: specsv1.ImageConfig{
-				Entrypoint: []string{"/" + filepath.Base(*flagEntrypoint)},
+				Entrypoint: []string{"/" + entrypointPath},
 			},
 		},
 	}
 
+	entrypoint, err := os.Open(*flagEntrypoint)
+	if err != nil {
+		log.Fatal("reading entrypoint:", err)
+	}
 	layer := image.NewLayer()
 	layer.AddFile(entrypointPath, entrypoint)
 	if err := layer.Close(); err != nil {
 		log.Fatal("building entrypoint layer:", err)
 	}
+	entrypoint.Close()
 
 	output, err := os.Create(*flagOutput)
 	if err != nil {
