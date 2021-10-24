@@ -8,6 +8,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,28 +23,41 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/ocibuild"
 )
 
+const usageHeader = `zeroimage [options] ENTRYPOINT
+
+Build a single layer OCI image archive using ENTRYPOINT as the entrypoint.
+`
+
 var (
-	flagEntrypoint = flag.String("entrypoint", "", "Path to the entrypoint binary (deprecated, pass as argument)")
-	flagOS         = flag.String("os", runtime.GOOS, "OS to write to the image manifest")
-	flagArch       = flag.String("arch", runtime.GOARCH, "Architecture to write to the image manifest")
-	flagOutput     = flag.String("output", "", "Path to write the tar output archive to (default: [entrypoint].tar)")
+	flagArch   = flag.String("arch", runtime.GOARCH, "Set the target architecture for the image")
+	flagOS     = flag.String("os", runtime.GOOS, "Set the target OS for the image")
+	flagOutput = flag.String("output", "", `Write the image archive to this path (default [ENTRYPOINT].tar)`)
 )
+
+func init() {
+	flag.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), usageHeader)
+		flag.PrintDefaults()
+	}
+}
 
 func main() {
 	flag.Parse()
-
-	if *flagEntrypoint == "" && flag.NArg() > 0 {
-		*flagEntrypoint = flag.Arg(0)
-	} else if *flagEntrypoint == "" {
+	if flag.NArg() == 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
+	log.SetPrefix("zeroimage error: ")
+	log.SetFlags(0)
+
+	entrypointPath := flag.Arg(0)
+	entrypointBase := filepath.Base(entrypointPath)
+
 	if *flagOutput == "" {
-		*flagOutput = *flagEntrypoint + ".tar"
+		*flagOutput = entrypointPath + ".tar"
 	}
 
-	entrypointBase := filepath.Base(*flagEntrypoint)
 	image := ocibuild.Image{
 		Config: specsv1.Image{
 			OS:           *flagOS,
@@ -54,25 +68,25 @@ func main() {
 		},
 	}
 
-	entrypoint, err := os.Open(*flagEntrypoint)
+	entrypoint, err := os.Open(entrypointPath)
 	if err != nil {
-		log.Fatal("reading entrypoint:", err)
+		log.Fatal("reading entrypoint: ", err)
 	}
 	layer := image.NewLayer()
 	layer.AddFile(entrypointBase, entrypoint)
 	if err := layer.Close(); err != nil {
-		log.Fatal("building entrypoint layer:", err)
+		log.Fatal("building entrypoint layer: ", err)
 	}
 	entrypoint.Close()
 
 	output, err := os.Create(*flagOutput)
 	if err != nil {
-		log.Fatal("opening output:", err)
+		log.Fatal("opening output: ", err)
 	}
 	if err := image.WriteArchive(output); err != nil {
-		log.Fatal("writing image:", err)
+		log.Fatal("writing image: ", err)
 	}
 	if err := output.Close(); err != nil {
-		log.Fatal("writing image:", err)
+		log.Fatal("writing image: ", err)
 	}
 }
