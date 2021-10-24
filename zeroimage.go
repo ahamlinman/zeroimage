@@ -23,26 +23,33 @@ import (
 )
 
 var (
-	flagEntrypoint = flag.String("entrypoint", "", "Path to the entrypoint binary")
+	flagEntrypoint = flag.String("entrypoint", "", "Path to the entrypoint binary (deprecated, pass as argument)")
 	flagOS         = flag.String("os", runtime.GOOS, "OS to write to the image manifest")
 	flagArch       = flag.String("arch", runtime.GOARCH, "Architecture to write to the image manifest")
-	flagOutput     = flag.String("output", "", "Path to write the tar output archive to")
+	flagOutput     = flag.String("output", "", "Path to write the tar output archive to (default: [entrypoint].tar)")
 )
 
 func main() {
 	flag.Parse()
-	if *flagEntrypoint == "" || *flagOutput == "" {
+
+	if *flagEntrypoint == "" && flag.NArg() > 0 {
+		*flagEntrypoint = flag.Arg(0)
+	} else if *flagEntrypoint == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	entrypointPath := filepath.Base(*flagEntrypoint)
+	if *flagOutput == "" {
+		*flagOutput = *flagEntrypoint + ".tar"
+	}
+
+	entrypointBase := filepath.Base(*flagEntrypoint)
 	image := ocibuild.Image{
 		Config: specsv1.Image{
 			OS:           *flagOS,
 			Architecture: *flagArch,
 			Config: specsv1.ImageConfig{
-				Entrypoint: []string{"/" + entrypointPath},
+				Entrypoint: []string{"/" + entrypointBase},
 			},
 		},
 	}
@@ -52,7 +59,7 @@ func main() {
 		log.Fatal("reading entrypoint:", err)
 	}
 	layer := image.NewLayer()
-	layer.AddFile(entrypointPath, entrypoint)
+	layer.AddFile(entrypointBase, entrypoint)
 	if err := layer.Close(); err != nil {
 		log.Fatal("building entrypoint layer:", err)
 	}
