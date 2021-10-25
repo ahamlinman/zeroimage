@@ -59,10 +59,10 @@ zeroimage -base distroless-base.tar some-program
 skopeo copy oci-archive:some-program.tar docker://registry.example.com/some-program:latest
 ```
 
-**Example:** Build a `FROM static`-style image and load it into a Docker daemon:
+**Example:** Build a `FROM scratch`-style image and load it into Docker:
 
 ```sh
-# Without a -base, zeroimage will produce a "FROM static"-style image that
+# Without a -base, zeroimage will produce a "FROM scratch"-style image that
 # literally just contains the entrypoint binary.
 zeroimage some-program
 
