@@ -188,6 +188,6 @@ func mustJSONMarshal(v interface{}) []byte {
 }
 
 func now() *time.Time {
-	now := time.Now()
+	now := time.Now().UTC()
 	return &now
 }
