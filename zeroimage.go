@@ -52,11 +52,12 @@ func main() {
 	log.SetPrefix("zeroimage error: ")
 	log.SetFlags(0)
 
-	entrypointPath := flag.Arg(0)
-	entrypointBase := filepath.Base(entrypointPath)
+	entrypointSourcePath := flag.Arg(0)
+	entrypointBase := filepath.Base(entrypointSourcePath)
+	entrypointTargetPath := "/bin/" + entrypointBase
 
 	if *flagOutput == "" {
-		*flagOutput = entrypointPath + ".tar"
+		*flagOutput = entrypointSourcePath + ".tar"
 	}
 
 	var image *ocibuild.Image
@@ -83,18 +84,19 @@ func main() {
 		}
 	}
 
-	entrypoint, err := os.Open(entrypointPath)
+	entrypoint, err := os.Open(entrypointSourcePath)
 	if err != nil {
 		log.Fatal("reading entrypoint: ", err)
 	}
 	layer := image.NewLayer()
-	layer.AddFile(entrypointBase, entrypoint)
+	layer.AddDirectory("bin/")
+	layer.AddFile(entrypointTargetPath, entrypoint)
 	if err := layer.Close(); err != nil {
 		log.Fatal("building entrypoint layer: ", err)
 	}
 	entrypoint.Close()
 
-	image.Config.Config.Entrypoint = []string{"/" + entrypointBase}
+	image.Config.Config.Entrypoint = []string{entrypointTargetPath}
 	image.Config.Config.Cmd = nil
 
 	output, err := os.Create(*flagOutput)
