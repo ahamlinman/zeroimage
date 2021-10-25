@@ -15,7 +15,7 @@ ENTRYPOINT ["/some-program"]
 …without using Docker at all.
 
 zeroimage is a lightweight container image builder for single-binary programs.
-It can produce single layer `FROM scratch`-style images, or extend an existing
+It can produce single-layer `FROM scratch`-style images, or extend an existing
 base image to include your program, without ever touching a full container
 runtime.
 
@@ -35,9 +35,8 @@ runtime.
 
 ## Usage
 
-zeroimage is based on the [OCI Image Format Specification][oci], which defines a
-standard file hierarchy and JSON manifest files to represent a container image.
-It consumes and produces OCI images stored in `.tar` archive files.
+zeroimage produces and consumes `.tar` archives whose contents comply with the
+[OCI Image Format Specification][oci].
 
 Not all container tools support OCI image archives! Most notably, Docker uses a
 proprietary `.tar` layout that is not OCI-compatible. You will probably use
