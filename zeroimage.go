@@ -29,8 +29,9 @@ Build a single layer OCI image archive using ENTRYPOINT as the entrypoint.
 `
 
 var (
-	flagArch   = flag.String("arch", runtime.GOARCH, "Set the target architecture for the image")
-	flagOS     = flag.String("os", runtime.GOOS, "Set the target OS for the image")
+	flagArch   = flag.String("arch", runtime.GOARCH, "Set the target architecture of the image")
+	flagBase   = flag.String("base", "", "Image archive to use as a base (optional)")
+	flagOS     = flag.String("os", runtime.GOOS, "Set the target OS of the image")
 	flagOutput = flag.String("output", "", `Write the image archive to this path (default [ENTRYPOINT].tar)`)
 )
 
@@ -58,14 +59,28 @@ func main() {
 		*flagOutput = entrypointPath + ".tar"
 	}
 
-	image := ocibuild.Image{
-		Config: specsv1.Image{
-			OS:           *flagOS,
-			Architecture: *flagArch,
-			Config: specsv1.ImageConfig{
-				Entrypoint: []string{"/" + entrypointBase},
-			},
-		},
+	var image *ocibuild.Image
+	if *flagBase == "" {
+		image = &ocibuild.Image{
+			Config: specsv1.Image{OS: *flagOS, Architecture: *flagArch},
+		}
+	} else {
+		base, err := os.Open(*flagBase)
+		if err != nil {
+			log.Fatal("loading base archive: ", err)
+		}
+		image, err = ocibuild.LoadArchive(base)
+		if err != nil {
+			log.Fatal("loading base archive: ", err)
+		}
+		base.Close()
+		if image.Config.OS != *flagOS || image.Config.Architecture != *flagArch {
+			log.Fatalf(
+				"base image platform %s/%s does not match output platform %s/%s",
+				image.Config.OS, image.Config.Architecture,
+				*flagOS, *flagArch,
+			)
+		}
 	}
 
 	entrypoint, err := os.Open(entrypointPath)
@@ -78,6 +93,9 @@ func main() {
 		log.Fatal("building entrypoint layer: ", err)
 	}
 	entrypoint.Close()
+
+	image.Config.Config.Entrypoint = []string{"/" + entrypointBase}
+	image.Config.Config.Cmd = nil
 
 	output, err := os.Create(*flagOutput)
 	if err != nil {
