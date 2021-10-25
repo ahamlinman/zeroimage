@@ -1,6 +1,10 @@
 # zeroimage
 
-`zeroimage some-program` is like building the following Docker image:
+```sh
+go run go.alexhamlin.co/zeroimage@latest some-program
+```
+
+…is like building the following Dockerfile:
 
 ```dockerfile
 FROM scratch
@@ -8,26 +12,74 @@ COPY some-program /some-program
 ENTRYPOINT ["/some-program"]
 ```
 
-…without actually using Docker.
+…without using Docker at all.
 
-Assuming that `some-program` is a statically linked executable, zeroimage
-effectively produces the most minimal image that a container runtime could use
-to launch it. In spite of the many caveats listed below, this can help drive
-down startup times on serverless container platforms like AWS Lambda. Since
-zeroimage simply writes a tar archive without ever talking to a container
-runtime, it's great for cross-platform image builds.
+zeroimage is a lightweight container image builder for single-binary programs.
+It can produce single-layer `FROM scratch`-style images, or extend an existing
+base image to include your program, without ever touching a full container
+runtime.
 
-## Caveats
+### Why zeroimage?
 
-> Yeah, but your scientists were so preoccupied with whether or not they could,
-> they didn't stop to think if they should.
->
-> — Dr. Ian Malcolm, _Jurassic Park_
+- It imports [few dependencies][imports] outside of the Go standard library, so
+  you can quickly install and run it even with `go run`.
+- It doesn't depend on a container runtime, which can simplify image builds for
+  cross-compiled programs.
+- It's unopinionated about the rest of your toolchain, and supports
+  single-binary entrypoints compiled from any language.
+- In spite of their caveats (see below), it supports `FROM scratch`-style images
+  that produce the smallest possible output, which can be helpful on serverless
+  container platforms like AWS Lambda.
 
-**Please be warned:** There are a _significant_ number of caveats associated
-with this kind of approach, and if you are not careful about the fact that your
-application is arguably running in a broken environment, things are probably not
-going to go well.
+[imports]: https://pkg.go.dev/go.alexhamlin.co/zeroimage?tab=imports
+
+## Usage
+
+zeroimage produces and consumes `.tar` archives whose contents comply with the
+[OCI Image Format Specification][oci].
+
+Not all container tools support OCI image archives! Most notably, Docker uses a
+proprietary `.tar` layout that is not OCI-compatible. You will probably use
+zeroimage alongside a tool like [Skopeo][skopeo] to push and pull OCI image
+archives to and from registries, or to load images into a container runtime.
+
+**Example:** Publish an image with a [distroless][distroless] base layer, which
+contains a basic Linux system layout but no shell or package manager:
+
+```sh
+# Download the base image into an OCI image archive with Skopeo.
+skopeo copy docker://gcr.io/distroless/static:latest oci-archive:distroless-base.tar
+
+# Build a new OCI image archive using the base image and your entrypoint. By
+# default zeroimage will name the output file "some-program.tar", based on the
+# entrypoint name.
+zeroimage -base distroless-base.tar some-program
+
+# Publish the new image to your own registry.
+skopeo copy oci-archive:some-program.tar docker://registry.example.com/some-program:latest
+```
+
+**Example:** Build a `FROM static`-style image and load it into a Docker daemon:
+
+```sh
+# Without a -base, zeroimage will produce a "FROM static"-style image that
+# literally just contains the entrypoint binary.
+zeroimage some-program
+
+# Since "docker load" does not support OCI image archives, use Skopeo to load
+# the image into a Docker daemon.
+skopeo copy oci-archive:some-program.tar docker-daemon:registry.example.com/some-program:latest
+```
+
+[oci]: https://github.com/opencontainers/image-spec
+[skopeo]: https://github.com/containers/skopeo
+[distroless]: https://github.com/GoogleContainerTools/distroless
+
+## Caveats of `FROM scratch`-Style Images
+
+While zeroimage supports `FROM scratch`-style images with no base layer at all,
+there are serious caveats associated with this approach for which you may need
+to specially prepare your application.
 
 Most notably, the entrypoint binary must be _completely_ statically linked. Even
 languages that are capable of producing such binaries do not usually do this by
@@ -43,31 +95,8 @@ Other notable caveats include, but are not limited to:
   this with the `timetzdata` build tag.)
 - There are no TLS root certificates in the image.
 
-## Usage
-
-zeroimage produces tar archive files compliant with the [OCI Image Format
-Specification][oci]. You can use [Skopeo][skopeo] to work with these files:
-
-```sh
-# Write a container image archive to some-program.tar.
-# You can pass the -output flag to write to a different path.
-# You can also use -os and -arch to override the target platform of the image.
-# Run "zeroimage -help" for usage.
-zeroimage some-program
-
-# Upload the image directly to a container registry.
-skopeo copy oci-archive:some-program.tar docker://registry.example.com/some-program:latest
-
-# Load the image into Docker (with a tag).
-# Note that "docker load" does NOT support the OCI archive format!
-# "skopeo copy" will convert the image to Docker's proprietary format.
-skopeo copy oci-archive:some-program.tar docker-daemon:registry.example.com/some-program:latest
-```
-
-[oci]: https://github.com/opencontainers/image-spec
-[skopeo]: https://github.com/containers/skopeo
-
 ## Future Work
 
-- Support starting from a base image instead of nothing at all, to enable
-  building more "proper" distroless containers.
+- Instead of building `FROM scratch` by default, provide a built-in minimal base
+  that removes some of the caveats noted above. For example, automatically
+  bundle a standard `/etc/passwd` and a known set of TLS roots by default.

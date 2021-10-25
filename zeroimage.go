@@ -29,8 +29,9 @@ Build a single layer OCI image archive using ENTRYPOINT as the entrypoint.
 `
 
 var (
-	flagArch   = flag.String("arch", runtime.GOARCH, "Set the target architecture for the image")
-	flagOS     = flag.String("os", runtime.GOOS, "Set the target OS for the image")
+	flagArch   = flag.String("arch", runtime.GOARCH, "Set the target architecture of the image")
+	flagBase   = flag.String("base", "", "Image archive to use as a base (optional)")
+	flagOS     = flag.String("os", runtime.GOOS, "Set the target OS of the image")
 	flagOutput = flag.String("output", "", `Write the image archive to this path (default [ENTRYPOINT].tar)`)
 )
 
@@ -48,45 +49,67 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.SetPrefix("zeroimage error: ")
+	log.SetPrefix("[zeroimage] ")
 	log.SetFlags(0)
 
-	entrypointPath := flag.Arg(0)
-	entrypointBase := filepath.Base(entrypointPath)
+	entrypointSourcePath := flag.Arg(0)
+	entrypointBase := filepath.Base(entrypointSourcePath)
+	entrypointTargetPath := "/" + entrypointBase
 
 	if *flagOutput == "" {
-		*flagOutput = entrypointPath + ".tar"
+		*flagOutput = entrypointSourcePath + ".tar"
 	}
 
-	image := ocibuild.Image{
-		Config: specsv1.Image{
-			OS:           *flagOS,
-			Architecture: *flagArch,
-			Config: specsv1.ImageConfig{
-				Entrypoint: []string{"/" + entrypointBase},
-			},
-		},
+	var image *ocibuild.Image
+	if *flagBase == "" {
+		log.Println("Building image from scratch")
+		image = &ocibuild.Image{
+			Config: specsv1.Image{OS: *flagOS, Architecture: *flagArch},
+		}
+	} else {
+		log.Printf("Loading base image: %s", *flagBase)
+		base, err := os.Open(*flagBase)
+		if err != nil {
+			log.Fatal("Unable to load base image: ", err)
+		}
+		image, err = ocibuild.LoadArchive(base)
+		if err != nil {
+			log.Fatal("Unable to load base image: ", err)
+		}
+		base.Close()
+		if image.Config.OS != *flagOS || image.Config.Architecture != *flagArch {
+			log.Fatalf(
+				"Base image platform %s/%s does not match output platform %s/%s",
+				image.Config.OS, image.Config.Architecture,
+				*flagOS, *flagArch,
+			)
+		}
 	}
 
-	entrypoint, err := os.Open(entrypointPath)
+	log.Printf("Adding entrypoint: %s", entrypointTargetPath)
+	entrypoint, err := os.Open(entrypointSourcePath)
 	if err != nil {
-		log.Fatal("reading entrypoint: ", err)
+		log.Fatal("Unable to read entrypoint: ", err)
 	}
 	layer := image.NewLayer()
-	layer.AddFile(entrypointBase, entrypoint)
+	layer.AddFile(entrypointTargetPath, entrypoint)
 	if err := layer.Close(); err != nil {
-		log.Fatal("building entrypoint layer: ", err)
+		log.Fatal("Failed to build entrypoint layer: ", err)
 	}
 	entrypoint.Close()
 
+	image.Config.Config.Entrypoint = []string{entrypointTargetPath}
+	image.Config.Config.Cmd = nil
+
+	log.Printf("Writing image: %s", *flagOutput)
 	output, err := os.Create(*flagOutput)
 	if err != nil {
-		log.Fatal("opening output: ", err)
+		log.Fatal("Unable to create output file: ", err)
 	}
 	if err := image.WriteArchive(output); err != nil {
-		log.Fatal("writing image: ", err)
+		log.Fatal("Failed to write image: ", err)
 	}
 	if err := output.Close(); err != nil {
-		log.Fatal("writing image: ", err)
+		log.Fatal("Failed to write image: ", err)
 	}
 }

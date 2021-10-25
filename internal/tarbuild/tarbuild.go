@@ -39,7 +39,7 @@ func (b *Builder) AddDirectory(path string) error {
 		return b.err
 	}
 
-	path = strings.TrimSuffix(path, "/") + "/"
+	path = strings.Trim(path, "/") + "/"
 	b.err = b.tw.WriteHeader(&tar.Header{Name: path, Mode: 040755})
 	return b.err
 }
@@ -52,7 +52,7 @@ func (b *Builder) AddFileContent(path string, content []byte) error {
 	}
 
 	err := b.tw.WriteHeader(&tar.Header{
-		Name: path,
+		Name: strings.TrimPrefix(path, "/"),
 		Size: int64(len(content)),
 		Mode: 0644,
 	})
@@ -85,7 +85,7 @@ func (b *Builder) AddFile(path string, file fs.File) error {
 		b.err = err
 		return err
 	}
-	header.Name = path
+	header.Name = strings.TrimPrefix(path, "/")
 	header.Uid = 0
 	header.Gid = 0
 	header.Uname = ""
