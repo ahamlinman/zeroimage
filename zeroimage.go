@@ -54,7 +54,7 @@ func main() {
 
 	entrypointSourcePath := flag.Arg(0)
 	entrypointBase := filepath.Base(entrypointSourcePath)
-	entrypointTargetPath := "/bin/" + entrypointBase
+	entrypointTargetPath := "/" + entrypointBase
 
 	if *flagOutput == "" {
 		*flagOutput = entrypointSourcePath + ".tar"
@@ -92,7 +92,6 @@ func main() {
 		log.Fatal("Unable to read entrypoint: ", err)
 	}
 	layer := image.NewLayer()
-	layer.AddDirectory("bin/")
 	layer.AddFile(entrypointTargetPath, entrypoint)
 	if err := layer.Close(); err != nil {
 		log.Fatal("Failed to build entrypoint layer: ", err)
