@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"path"
 	"strings"
 	"time"
 )
@@ -39,14 +40,15 @@ func NewBuilder(w io.Writer) *Builder {
 
 // AddDirectory adds an entry for a directory with mode 755 at the provided
 // path.
-func (b *Builder) AddDirectory(dirpath string) error {
+func (b *Builder) AddDirectory(path string) error {
 	if b.err != nil {
 		return b.err
 	}
 
-	dirpath = normalizeDirpath(dirpath)
+	path = normalizePath(path)
+
 	b.err = b.tw.WriteHeader(&tar.Header{
-		Name:    dirpath,
+		Name:    path + "/",
 		Mode:    040755,
 		ModTime: b.modTime,
 	})
@@ -55,14 +57,15 @@ func (b *Builder) AddDirectory(dirpath string) error {
 
 // AddFileContent adds an entry for a file with mode 644 containing the provided
 // content at the provided path.
-func (b *Builder) AddFileContent(filepath string, content []byte) error {
+func (b *Builder) AddFileContent(path string, content []byte) error {
 	if b.err != nil {
 		return b.err
 	}
 
-	filepath = normalizeFilepath(filepath)
+	path = normalizePath(path)
+
 	err := b.tw.WriteHeader(&tar.Header{
-		Name:    filepath,
+		Name:    path,
 		Size:    int64(len(content)),
 		Mode:    0644,
 		ModTime: b.modTime,
@@ -80,12 +83,12 @@ func (b *Builder) AddFileContent(filepath string, content []byte) error {
 // the file's mode bits, modification time, and extended attributes, but not
 // including the file's owner, group, or original name. It reads the file to
 // copy it into the archive, but does not close it.
-func (b *Builder) AddFile(filepath string, file fs.File) error {
+func (b *Builder) AddFile(path string, file fs.File) error {
 	if b.err != nil {
 		return b.err
 	}
 
-	filepath = normalizeFilepath(filepath)
+	path = normalizePath(path)
 
 	stat, err := file.Stat()
 	if err != nil {
@@ -98,7 +101,7 @@ func (b *Builder) AddFile(filepath string, file fs.File) error {
 		b.err = err
 		return err
 	}
-	header.Name = filepath
+	header.Name = path
 	header.Uid = 0
 	header.Gid = 0
 	header.Uname = ""
@@ -128,14 +131,15 @@ func (b *Builder) Close() error {
 	return nil
 }
 
-// normalizeFilepath normalizes the provided file path such that it does not
-// contain a "/" prefix.
-func normalizeFilepath(filepath string) string {
-	return strings.TrimPrefix(filepath, "/")
-}
-
-// normalizeDirpath normalizes the provided directory path such that it does not
-// contain a "/" prefix, and always contains a "/" suffix.
-func normalizeDirpath(dirpath string) string {
-	return strings.Trim(dirpath, "/") + "/"
+// normalizePath normalizes the provided file or directory path for use in a tar
+// archive. In addition to the lexical processing performed by path.Clean,
+// normalizePath transforms absolute paths into relative paths from the root of
+// the archive. In particular, the root path normalizes to ".".
+func normalizePath(p string) string {
+	p = path.Clean(p)
+	p = strings.TrimPrefix(p, "/")
+	if p == "" {
+		p = "."
+	}
+	return p
 }
