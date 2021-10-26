@@ -98,22 +98,18 @@ func (lb *LayerBuilder) Close() error {
 // set to the current time.
 func (img *Image) WriteArchive(w io.Writer) error {
 	iw := imageWriter{
-		tar:             tarbuild.NewBuilder(w),
-		image:           img,
-		hasAlgorithmDir: make(map[digest.Algorithm]bool),
+		tar:   tarbuild.NewBuilder(w),
+		image: img,
 	}
 	return iw.WriteArchive()
 }
 
 type imageWriter struct {
-	tar             *tarbuild.Builder
-	image           *Image
-	hasAlgorithmDir map[digest.Algorithm]bool
+	tar   *tarbuild.Builder
+	image *Image
 }
 
 func (iw *imageWriter) WriteArchive() error {
-	iw.tar.AddDirectory("blobs/")
-
 	for _, layer := range iw.image.Layers {
 		iw.addBlob(layer.Descriptor.Digest, layer.Blob)
 	}
@@ -145,7 +141,6 @@ func (iw *imageWriter) WriteArchive() error {
 
 func (iw *imageWriter) addBlob(digest digest.Digest, blob []byte) {
 	path := "blobs/" + string(digest.Algorithm()) + "/" + digest.Encoded()
-	iw.ensureAlgorithmDirectory(digest.Algorithm())
 	iw.tar.AddFileContent(path, blob)
 }
 
@@ -163,14 +158,6 @@ func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) specsv1.Desc
 func (iw *imageWriter) addJSONFile(path string, v interface{}) {
 	encoded := mustJSONMarshal(v)
 	iw.tar.AddFileContent(path, encoded)
-}
-
-func (iw *imageWriter) ensureAlgorithmDirectory(alg digest.Algorithm) {
-	if iw.hasAlgorithmDir[alg] {
-		return
-	}
-	iw.tar.AddDirectory("blobs/" + string(alg) + "/")
-	iw.hasAlgorithmDir[alg] = true
 }
 
 // mustJSONMarshal returns the JSON encoding of v, or panics if v cannot be
