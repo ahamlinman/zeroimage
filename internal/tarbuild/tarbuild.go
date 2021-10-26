@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+	"time"
 )
 
 // ErrClosed is returned when attempting to add entries to a closed Builder.
@@ -15,21 +16,25 @@ var ErrClosed = errors.New("tarbuild: builder closed")
 // Builder creates a tape archive (tar) in an opinionated manner.
 //
 // All entries in the archive will have their user and group IDs set to 0
-// (root). Unless otherwise specified, all entries will have a modification time
-// at the start of the Unix epoch (1 January 1970 at midnight UTC).
+// (root). Unless otherwise specified, the modification time of all entries will
+// be the time at which the Builder was initialized.
 //
 // If an error occurs while using a Builder, no more entries will be written to
 // the archive and all subsequent operations, and Close, will return the error.
 // After all entries have been written, the client must call Close to write the
 // tar footer. It is an error to attempt to add entries to a closed Builder.
 type Builder struct {
-	tw  *tar.Writer
-	err error
+	tw      *tar.Writer
+	err     error
+	modTime time.Time
 }
 
 // NewBuilder returns a Builder that writes a tar archive to w.
 func NewBuilder(w io.Writer) *Builder {
-	return &Builder{tw: tar.NewWriter(w)}
+	return &Builder{
+		tw:      tar.NewWriter(w),
+		modTime: time.Now().UTC(),
+	}
 }
 
 // AddDirectory adds an entry for a directory with mode 755 at the provided
@@ -40,7 +45,11 @@ func (b *Builder) AddDirectory(path string) error {
 	}
 
 	path = strings.Trim(path, "/") + "/"
-	b.err = b.tw.WriteHeader(&tar.Header{Name: path, Mode: 040755})
+	b.err = b.tw.WriteHeader(&tar.Header{
+		Name:    path,
+		Mode:    040755,
+		ModTime: b.modTime,
+	})
 	return b.err
 }
 
@@ -52,9 +61,10 @@ func (b *Builder) AddFileContent(path string, content []byte) error {
 	}
 
 	err := b.tw.WriteHeader(&tar.Header{
-		Name: strings.TrimPrefix(path, "/"),
-		Size: int64(len(content)),
-		Mode: 0644,
+		Name:    strings.TrimPrefix(path, "/"),
+		Size:    int64(len(content)),
+		Mode:    0644,
+		ModTime: b.modTime,
 	})
 	if err != nil {
 		b.err = err
