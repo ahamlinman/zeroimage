@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"path"
@@ -13,6 +14,14 @@ import (
 
 // ErrClosed is returned when attempting to add entries to a closed Builder.
 var ErrClosed = errors.New("tarbuild: builder closed")
+
+// PathExistsError is returned when attempting to add multiple entries at the
+// same path to a Builder. The string contains the path of the duplicate entry.
+type PathExistsError string
+
+func (perr PathExistsError) Error() string {
+	return fmt.Sprintf("tarbuild: duplicate entry %s", string(perr))
+}
 
 // Builder creates a tape archive (tar) in an opinionated manner.
 //
@@ -28,6 +37,7 @@ type Builder struct {
 	tw      *tar.Writer
 	err     error
 	modTime time.Time
+	added   map[string]bool
 }
 
 // NewBuilder returns a Builder that writes a tar archive to w.
@@ -35,6 +45,7 @@ func NewBuilder(w io.Writer) *Builder {
 	return &Builder{
 		tw:      tar.NewWriter(w),
 		modTime: time.Now().UTC(),
+		added:   make(map[string]bool),
 	}
 }
 
@@ -46,6 +57,10 @@ func (b *Builder) AddDirectory(path string) error {
 	}
 
 	path = normalizePath(path)
+	b.err = b.usePath(path)
+	if b.err != nil {
+		return b.err
+	}
 
 	b.err = b.tw.WriteHeader(&tar.Header{
 		Name:    path + "/",
@@ -63,16 +78,19 @@ func (b *Builder) AddFileContent(path string, content []byte) error {
 	}
 
 	path = normalizePath(path)
+	b.err = b.usePath(path)
+	if b.err != nil {
+		return b.err
+	}
 
-	err := b.tw.WriteHeader(&tar.Header{
+	b.err = b.tw.WriteHeader(&tar.Header{
 		Name:    path,
 		Size:    int64(len(content)),
 		Mode:    0644,
 		ModTime: b.modTime,
 	})
-	if err != nil {
-		b.err = err
-		return err
+	if b.err != nil {
+		return b.err
 	}
 
 	_, b.err = io.Copy(b.tw, bytes.NewReader(content))
@@ -89,6 +107,10 @@ func (b *Builder) AddFile(path string, file fs.File) error {
 	}
 
 	path = normalizePath(path)
+	b.err = b.usePath(path)
+	if b.err != nil {
+		return b.err
+	}
 
 	stat, err := file.Stat()
 	if err != nil {
@@ -128,6 +150,14 @@ func (b *Builder) Close() error {
 	}
 
 	b.err = ErrClosed
+	return nil
+}
+
+func (b *Builder) usePath(path string) error {
+	if b.added[path] {
+		return PathExistsError(path)
+	}
+	b.added[path] = true
 	return nil
 }
 
