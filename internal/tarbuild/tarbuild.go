@@ -91,10 +91,15 @@ func (b *Builder) AddContent(path string, content []byte) error {
 //
 // Add reads the provided file in order to copy it into the archive, but does
 // not close it.
-func (b *Builder) Add(path string, file fs.File) error {
+func (b *Builder) Add(path string, file fs.File) (err error) {
 	if b.err != nil {
 		return b.err
 	}
+	defer func() {
+		if err != nil {
+			b.err = err
+		}
+	}()
 
 	np := normalizePath(path)
 
@@ -104,21 +109,18 @@ func (b *Builder) Add(path string, file fs.File) error {
 		b.entries[np] = tar.TypeReg
 	}
 
-	b.err = b.ensureParentDirectory(np)
-	if b.err != nil {
-		return b.err
+	if err := b.ensureParentDirectory(np); err != nil {
+		return err
 	}
 
-	var stat fs.FileInfo
-	stat, b.err = file.Stat()
-	if b.err != nil {
-		return b.err
+	stat, err := file.Stat()
+	if err != nil {
+		return err
 	}
 
-	var header *tar.Header
-	header, b.err = tar.FileInfoHeader(stat, "")
-	if b.err != nil {
-		return b.err
+	header, err := tar.FileInfoHeader(stat, "")
+	if err != nil {
+		return err
 	}
 	header.Name = string(np)
 	header.Uid = 0
@@ -126,12 +128,11 @@ func (b *Builder) Add(path string, file fs.File) error {
 	header.Uname = ""
 	header.Gname = ""
 	if err := b.tw.WriteHeader(header); err != nil {
-		b.err = err
 		return err
 	}
 
-	_, b.err = io.Copy(b.tw, file)
-	return b.err
+	_, err = io.Copy(b.tw, file)
+	return err
 }
 
 // Close finishes writing the tar archive if all entries were added
