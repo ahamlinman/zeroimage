@@ -92,7 +92,7 @@ func main() {
 		log.Fatal("Unable to read entrypoint: ", err)
 	}
 	layer := image.NewLayer()
-	layer.AddFile(entrypointTargetPath, entrypoint)
+	layer.Add(entrypointTargetPath, entrypoint)
 	if err := layer.Close(); err != nil {
 		log.Fatal("Failed to build entrypoint layer: ", err)
 	}

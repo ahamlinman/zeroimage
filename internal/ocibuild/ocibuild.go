@@ -141,7 +141,7 @@ func (iw *imageWriter) WriteArchive() error {
 
 func (iw *imageWriter) addBlob(digest digest.Digest, blob []byte) {
 	path := "blobs/" + string(digest.Algorithm()) + "/" + digest.Encoded()
-	iw.tar.AddFileContent(path, blob)
+	iw.tar.AddContent(path, blob)
 }
 
 func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) specsv1.Descriptor {
@@ -157,7 +157,7 @@ func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) specsv1.Desc
 
 func (iw *imageWriter) addJSONFile(path string, v interface{}) {
 	encoded := mustJSONMarshal(v)
-	iw.tar.AddFileContent(path, encoded)
+	iw.tar.AddContent(path, encoded)
 }
 
 // mustJSONMarshal returns the JSON encoding of v, or panics if v cannot be
