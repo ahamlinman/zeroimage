@@ -15,32 +15,13 @@ import (
 // ErrClosed is returned when attempting to add entries to a closed Builder.
 var ErrClosed = errors.New("tarbuild: builder closed")
 
-// PathExistsError is returned when attempting to add multiple entries at the
-// same path to a Builder. The string contains the path of the duplicate entry.
-type PathExistsError string
+// DuplicateEntryError is returned when attempting to add multiple entries to an
+// archive with the same path. The string contains the duplicated path.
+type DuplicateEntryError string
 
-func (perr PathExistsError) Error() string {
-	return fmt.Sprintf("tarbuild: duplicate entry %s", string(perr))
+func (derr DuplicateEntryError) Error() string {
+	return fmt.Sprintf("tarbuild: duplicate entry %s", string(derr))
 }
-
-// npath represents a path for which path == normalizePath(path).
-type npath string
-
-// normalizePath normalizes the provided file or directory path for use in a tar
-// archive. In addition to the lexical processing performed by path.Clean,
-// normalizePath transforms absolute paths into relative paths from the root of
-// the archive. In particular, the root path normalizes to ".".
-func normalizePath(p string) npath {
-	p = path.Clean(p)
-	p = strings.TrimPrefix(p, "/")
-	if p == "" {
-		p = "."
-	}
-	return npath(p)
-}
-
-// tarTypeflag matches the type of the Typeflag field in tar.Header.
-type tarTypeflag = byte
 
 // Builder creates a tape archive (tar) in an opinionated manner.
 //
@@ -60,6 +41,25 @@ type Builder struct {
 	added   map[npath]tarTypeflag
 }
 
+// tarTypeflag matches the type of the Typeflag field in tar.Header.
+type tarTypeflag = byte
+
+// npath represents a path for which path == normalizePath(path).
+type npath string
+
+// normalizePath normalizes the provided file or directory path for use in a tar
+// archive. In addition to the lexical processing performed by path.Clean,
+// normalizePath transforms absolute paths into relative paths from the root of
+// the archive. In particular, the root path normalizes to ".".
+func normalizePath(p string) npath {
+	p = path.Clean(p)
+	p = strings.TrimPrefix(p, "/")
+	if p == "" {
+		p = "."
+	}
+	return npath(p)
+}
+
 // NewBuilder returns a Builder that writes a tar archive to w.
 func NewBuilder(w io.Writer) *Builder {
 	return &Builder{
@@ -72,28 +72,12 @@ func NewBuilder(w io.Writer) *Builder {
 // AddFileContent adds an entry for a file with mode 644 containing the provided
 // content at the provided path.
 func (b *Builder) AddFileContent(path string, content []byte) error {
-	if b.err != nil {
-		return b.err
-	}
-
-	np := normalizePath(path)
-	b.err = b.prepareNewFileEntry(np)
-	if b.err != nil {
-		return b.err
-	}
-
-	b.err = b.tw.WriteHeader(&tar.Header{
-		Name:    string(np),
+	return b.AddFile(path, File{
+		Reader:  bytes.NewReader(content),
 		Size:    int64(len(content)),
 		Mode:    0644,
 		ModTime: b.modTime,
 	})
-	if b.err != nil {
-		return b.err
-	}
-
-	_, b.err = io.Copy(b.tw, bytes.NewReader(content))
-	return b.err
 }
 
 // AddFile adds an entry for the provided file at the provided path, including
@@ -106,21 +90,28 @@ func (b *Builder) AddFile(path string, file fs.File) error {
 	}
 
 	np := normalizePath(path)
-	b.err = b.prepareNewFileEntry(np)
+
+	if _, ok := b.added[np]; ok {
+		return DuplicateEntryError(string(np))
+	} else {
+		b.added[np] = tar.TypeReg
+	}
+
+	b.err = b.ensureParentDirectory(np)
 	if b.err != nil {
 		return b.err
 	}
 
-	stat, err := file.Stat()
-	if err != nil {
-		b.err = err
-		return err
+	var stat fs.FileInfo
+	stat, b.err = file.Stat()
+	if b.err != nil {
+		return b.err
 	}
 
-	header, err := tar.FileInfoHeader(stat, "")
-	if err != nil {
-		b.err = err
-		return err
+	var header *tar.Header
+	header, b.err = tar.FileInfoHeader(stat, "")
+	if b.err != nil {
+		return b.err
 	}
 	header.Name = string(np)
 	header.Uid = 0
@@ -152,19 +143,6 @@ func (b *Builder) Close() error {
 	return nil
 }
 
-func (b *Builder) prepareNewFileEntry(np npath) error {
-	if _, ok := b.added[np]; ok {
-		return PathExistsError(string(np))
-	}
-
-	if err := b.ensureParentDirectory(np); err != nil {
-		return err
-	}
-
-	b.added[np] = tar.TypeReg
-	return nil
-}
-
 func (b *Builder) ensureParentDirectory(np npath) error {
 	// This function has to operate entirely on the *parent* of our target path,
 	// as the caller is expected to add the entry for the target path itself.
@@ -181,7 +159,7 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 		if typeflag == tar.TypeDir {
 			return nil
 		}
-		return PathExistsError(string(parent))
+		return DuplicateEntryError(string(parent))
 	}
 
 	if err := b.ensureParentDirectory(parent); err != nil {
