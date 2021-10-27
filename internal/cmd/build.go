@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -21,27 +20,25 @@ import (
 
 var buildCmd = &cobra.Command{
 	Use:   "build [flags] IMAGE ENTRYPOINT",
-	Short: "Build a container image from an entrypoint binary",
-	Args:  cobra.ExactArgs(2),
-	Run:   run,
+	Short: "Build an image locally",
+	Long: `Build an image locally
+
+By default, build loads the generated image into a running Docker daemon. With
+the --output flag, it instead writes a Docker tar archive to the provided path.
+	`,
+	Args: cobra.ExactArgs(2),
+	Run:  run,
 }
 
 var (
-	buildFromArchive string
-	buildOutput      string
-	buildTargetArch  string
-	buildTargetOS    string
+	buildOutput string
 )
 
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use a Docker tar archive as the base image")
-	buildCmd.Flags().StringVar(&buildOutput, "output", "", "Write a Docker tar archive instead of pushing to the daemon")
-	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
-	buildCmd.Flags().StringVar(&buildTargetOS, "target-os", runtime.GOOS, "Set the target OS of the image")
+	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write a Docker tar archive instead of pushing to the daemon")
 
-	buildCmd.MarkFlagFilename("from-archive", "tar")
 	buildCmd.MarkFlagFilename("output", "tar")
 }
 
@@ -60,13 +57,13 @@ func run(_ *cobra.Command, args []string) {
 	entrypointTargetPath := "/" + entrypointBase
 
 	var image v1.Image
-	if buildFromArchive == "" {
+	if flagFromArchive == "" {
 		log.Println("Building image from scratch")
 		image = empty.Image
 	} else {
-		buildFromArchive = filepath.Clean(buildFromArchive)
-		log.Printf("Loading base image from %s", buildFromArchive)
-		opener := func() (io.ReadCloser, error) { return os.Open(buildFromArchive) }
+		flagFromArchive = filepath.Clean(flagFromArchive)
+		log.Printf("Loading base image from %s", flagFromArchive)
+		opener := func() (io.ReadCloser, error) { return os.Open(flagFromArchive) }
 		image, err = tarball.Image(opener, nil)
 		if err != nil {
 			log.Fatalf("Unable to load base image: %s", err)
@@ -76,11 +73,11 @@ func run(_ *cobra.Command, args []string) {
 		if err != nil {
 			log.Fatal("Unable to load base image config: ", err)
 		}
-		if configFile.OS != buildTargetOS || configFile.Architecture != buildTargetArch {
+		if configFile.OS != flagTargetOS || configFile.Architecture != flagTargetArch {
 			log.Fatalf(
 				"Base image platform %s/%s does not match output platform %s/%s",
 				configFile.OS, configFile.Architecture,
-				buildTargetOS, buildTargetArch,
+				flagTargetOS, flagTargetArch,
 			)
 		}
 	}
