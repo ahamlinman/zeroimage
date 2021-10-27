@@ -19,35 +19,35 @@ import (
 )
 
 var buildCmd = &cobra.Command{
-	Use:   "build [flags] ENTRYPOINT IMAGE",
+	Use:   "build [flags] IMAGE ENTRYPOINT",
 	Short: "Build a container image from an entrypoint binary",
 	Args:  cobra.ExactArgs(2),
 	Run:   run,
 }
 
 var (
-	buildBaseArchive   string
-	buildOutputArchive string
-	buildTargetArch    string
-	buildTargetOS      string
+	buildFromArchive string
+	buildOutput      string
+	buildTargetArch  string
+	buildTargetOS    string
 )
 
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.Flags().StringVar(&buildBaseArchive, "base-archive", "", "Use a Docker tar archive as the base image")
-	buildCmd.Flags().StringVar(&buildOutputArchive, "output-archive", "", "Write a Docker tar archive as output")
+	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use a Docker tar archive as the base image")
+	buildCmd.Flags().StringVar(&buildOutput, "output", "", "Write a Docker tar archive as output")
 	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
 	buildCmd.Flags().StringVar(&buildTargetOS, "target-os", runtime.GOOS, "Set the target OS of the image")
 
-	buildCmd.MarkFlagFilename("base-archive", "tar")
-	buildCmd.MarkFlagFilename("output-archive", "tar")
+	buildCmd.MarkFlagFilename("from-archive", "tar")
+	buildCmd.MarkFlagFilename("output", "tar")
 }
 
 func run(_ *cobra.Command, args []string) {
 	var (
-		entrypointSourcePath = args[0]
-		targetImageName      = args[1]
+		targetImageName      = args[0]
+		entrypointSourcePath = args[1]
 	)
 
 	targetImageReference, err := name.ParseReference(targetImageName)
@@ -58,18 +58,18 @@ func run(_ *cobra.Command, args []string) {
 	entrypointBase := filepath.Base(entrypointSourcePath)
 	entrypointTargetPath := "/" + entrypointBase
 
-	if buildOutputArchive == "" {
-		buildOutputArchive = entrypointSourcePath + ".tar"
+	if buildOutput == "" {
+		buildOutput = entrypointSourcePath + ".tar"
 	}
 
 	var image v1.Image
-	if buildBaseArchive == "" {
+	if buildFromArchive == "" {
 		log.Println("Building image from scratch")
 		image = empty.Image
 	} else {
-		buildBaseArchive = filepath.Clean(buildBaseArchive)
-		log.Printf("Loading base image from %s", buildBaseArchive)
-		opener := func() (io.ReadCloser, error) { return os.Open(buildBaseArchive) }
+		buildFromArchive = filepath.Clean(buildFromArchive)
+		log.Printf("Loading base image from %s", buildFromArchive)
+		opener := func() (io.ReadCloser, error) { return os.Open(buildFromArchive) }
 		image, err = tarball.Image(opener, nil)
 		if err != nil {
 			log.Fatalf("Unable to load base image: %s", err)
@@ -126,8 +126,8 @@ func run(_ *cobra.Command, args []string) {
 		log.Fatal("Failed to set entrypoint in image config: ", err)
 	}
 
-	log.Printf("Writing archive of %s to %s", targetImageReference, buildOutputArchive)
-	err = tarball.WriteToFile(buildOutputArchive, targetImageReference, image)
+	log.Printf("Writing archive of %s to %s", targetImageReference, buildOutput)
+	err = tarball.WriteToFile(buildOutput, targetImageReference, image)
 	if err != nil {
 		log.Fatal("Unable to write image: ", err)
 	}
