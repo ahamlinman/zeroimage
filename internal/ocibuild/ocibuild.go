@@ -28,27 +28,6 @@ type Layer struct {
 	Blob       []byte
 }
 
-// AppendLayer adds the provided layer to the image, updating the diff IDs and
-// history in the image configuration.
-//
-// If the digest or size fields of the layer's descriptor are empty, AppendLayer
-// will populate them from the provided blob.
-func (img *Image) AppendLayer(layer Layer) {
-	if layer.Descriptor.Digest == "" {
-		layer.Descriptor.Digest = digest.FromBytes(layer.Blob)
-	}
-	if layer.Descriptor.Size == 0 {
-		layer.Descriptor.Size = int64(len(layer.Blob))
-	}
-
-	img.Layers = append(img.Layers, layer)
-	img.Config.RootFS.DiffIDs = append(img.Config.RootFS.DiffIDs, layer.DiffID)
-	img.Config.History = append(img.Config.History, specsv1.History{
-		Created:   now(),
-		CreatedBy: "zeroimage",
-	})
-}
-
 // LayerBuilder provides an interface to create a new filesystem layer in an
 // image.
 type LayerBuilder struct {
@@ -82,7 +61,8 @@ func (lb *LayerBuilder) Close() error {
 	if err := lb.zw.Close(); err != nil {
 		return err
 	}
-	lb.img.AppendLayer(Layer{
+
+	layer := Layer{
 		Blob:   lb.buf.Bytes(),
 		DiffID: digest.NewDigest(digest.Canonical, lb.tarHash),
 		Descriptor: specsv1.Descriptor{
@@ -90,7 +70,15 @@ func (lb *LayerBuilder) Close() error {
 			Digest:    digest.NewDigest(digest.Canonical, lb.gzipHash),
 			Size:      int64(lb.buf.Len()),
 		},
+	}
+
+	lb.img.Layers = append(lb.img.Layers, layer)
+	lb.img.Config.RootFS.DiffIDs = append(lb.img.Config.RootFS.DiffIDs, layer.DiffID)
+	lb.img.Config.History = append(lb.img.Config.History, specsv1.History{
+		Created:   now(),
+		CreatedBy: "zeroimage",
 	})
+
 	return nil
 }
 
