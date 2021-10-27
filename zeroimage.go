@@ -9,18 +9,20 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
-	// Required by github.com/opencontainers/go-digest
-	_ "crypto/sha256"
-	_ "crypto/sha512"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 
-	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
-
-	"go.alexhamlin.co/zeroimage/internal/ocibuild"
+	"go.alexhamlin.co/zeroimage/internal/tarlayer"
 )
 
 const usageHeader = `zeroimage [options] ENTRYPOINT
@@ -60,27 +62,30 @@ func main() {
 		*flagOutput = entrypointSourcePath + ".tar"
 	}
 
-	var image *ocibuild.Image
+	var (
+		image v1.Image
+		err   error
+	)
+
 	if *flagBase == "" {
 		log.Println("Building image from scratch")
-		image = &ocibuild.Image{
-			Config: specsv1.Image{OS: *flagOS, Architecture: *flagArch},
-		}
+		image = empty.Image
 	} else {
-		log.Printf("Loading base image: %s", *flagBase)
-		base, err := os.Open(*flagBase)
+		log.Printf("Loading base image from archive: %s", *flagBase)
+		opener := func() (io.ReadCloser, error) { return os.Open(*flagBase) }
+		image, err = tarball.Image(opener, nil)
 		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
+			log.Fatalf("Unable to load base image: %s", err)
 		}
-		image, err = ocibuild.LoadArchive(base)
+
+		configFile, err := image.ConfigFile()
 		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
+			log.Fatal("Unable to load base image config: ", err)
 		}
-		base.Close()
-		if image.Config.OS != *flagOS || image.Config.Architecture != *flagArch {
+		if configFile.OS != *flagOS || configFile.Architecture != *flagArch {
 			log.Fatalf(
 				"Base image platform %s/%s does not match output platform %s/%s",
-				image.Config.OS, image.Config.Architecture,
+				configFile.OS, configFile.Architecture,
 				*flagOS, *flagArch,
 			)
 		}
@@ -91,25 +96,42 @@ func main() {
 	if err != nil {
 		log.Fatal("Unable to read entrypoint: ", err)
 	}
-	layer := image.NewLayer()
-	layer.Add(entrypointTargetPath, entrypoint)
-	if err := layer.Close(); err != nil {
+	builder := tarlayer.NewBuilder()
+	builder.Add(entrypointTargetPath, entrypoint)
+	entrypointLayer, err := builder.Finish()
+	if err != nil {
 		log.Fatal("Failed to build entrypoint layer: ", err)
 	}
 	entrypoint.Close()
 
-	image.Config.Config.Entrypoint = []string{entrypointTargetPath}
-	image.Config.Config.Cmd = nil
-
-	log.Printf("Writing image: %s", *flagOutput)
-	output, err := os.Create(*flagOutput)
+	image, err = mutate.Append(image, mutate.Addendum{
+		Layer: entrypointLayer,
+		History: v1.History{
+			Created:   v1.Time{Time: time.Now().UTC()},
+			CreatedBy: "zeroimage",
+			Comment:   "entrypoint layer",
+		},
+	})
 	if err != nil {
-		log.Fatal("Unable to create output file: ", err)
+		log.Fatal("Failed to add entrypoint layer to image: ", err)
 	}
-	if err := image.WriteArchive(output); err != nil {
-		log.Fatal("Failed to write image: ", err)
+
+	configFile, err := image.ConfigFile()
+	if err != nil {
+		log.Fatal("Unable to load image config: ", err)
 	}
-	if err := output.Close(); err != nil {
-		log.Fatal("Failed to write image: ", err)
+	config := configFile.Config
+	config.Entrypoint = []string{entrypointTargetPath}
+	config.Cmd = nil
+	image, err = mutate.Config(image, config)
+	if err != nil {
+		log.Fatal("Failed to set entrypoint in image config: ", err)
+	}
+
+	log.Printf("Writing image archive: %s", *flagOutput)
+	tag := name.MustParseReference("zeroimage:latest")
+	err = tarball.WriteToFile(*flagOutput, tag, image)
+	if err != nil {
+		log.Fatal("Unable to write image: ", err)
 	}
 }
