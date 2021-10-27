@@ -12,15 +12,27 @@ import (
 	"time"
 )
 
-// ErrClosed is returned when attempting to add entries to a closed Builder.
-var ErrClosed = errors.New("tarbuild: builder closed")
+// ErrBuilderClosed is returned when attempting to add entries to a closed
+// Builder.
+var ErrBuilderClosed = errors.New("tarbuild: builder closed")
 
-// DuplicateEntryError is returned when attempting to add multiple entries to an
-// archive with the same path. The string contains the duplicated path.
-type DuplicateEntryError string
+// ErrDuplicateEntry is the cause of an AddError resulting from an attempt to
+// add multiple entries at the same path.
+var ErrDuplicateEntry = errors.New("duplicate entry")
 
-func (derr DuplicateEntryError) Error() string {
-	return fmt.Sprintf("tarbuild: duplicate entry %s", string(derr))
+// AddError represents an error that occurred while adding the entry at Path to
+// a tar archive.
+type AddError struct {
+	Path string
+	Err  error
+}
+
+func (aerr AddError) Error() string {
+	return fmt.Sprintf("tarbuild: add %s: %s", aerr.Path, aerr.Err.Error())
+}
+
+func (aerr AddError) Unwrap() error {
+	return aerr.Err
 }
 
 // Builder creates a tape archive (tar) in an opinionated manner.
@@ -45,15 +57,12 @@ type Builder struct {
 // tarTypeflag matches the type of the Typeflag field in tar.Header.
 type tarTypeflag = byte
 
-// npath is a normalized path: a Clean relative path separated by forward
-// slashes.
-//
-// Because npath is a relative path, it contains no leading or trailing slashes,
-// and the root path is represented as ".".
+// npath holds a normalized path: a Clean relative path separated by forward
+// slashes. Because an npath is relative, it contains no leading or trailing
+// slashes, and the root path is represented as ".".
 type npath string
 
-// normalizePath returns the npath corresponding to the provided slash-separated
-// path.
+// normalizePath converts an arbitrary slash-separated path to an npath.
 func normalizePath(p string) npath {
 	p = path.Clean(p)
 	p = strings.TrimPrefix(p, "/")
@@ -95,21 +104,26 @@ func (b *Builder) Add(path string, file fs.File) (err error) {
 	if b.err != nil {
 		return b.err
 	}
-	defer func() {
-		if err != nil {
-			b.err = err
-		}
-	}()
 
 	np := normalizePath(path)
 
-	if _, ok := b.entries[np]; ok {
-		return DuplicateEntryError(string(np))
-	} else {
-		b.entries[np] = tar.TypeReg
-	}
+	defer func() {
+		if err != nil {
+			if aerr, ok := err.(AddError); ok {
+				b.err = aerr
+			} else {
+				b.err = AddError{string(np), err}
+			}
+		}
+	}()
 
-	if err := b.ensureParentDirectory(np); err != nil {
+	if _, ok := b.entries[np]; ok {
+		return ErrDuplicateEntry
+	}
+	b.entries[np] = tar.TypeReg
+
+	err = b.ensureParentDirectory(np)
+	if err != nil {
 		return err
 	}
 
@@ -135,22 +149,6 @@ func (b *Builder) Add(path string, file fs.File) (err error) {
 	return err
 }
 
-// Close finishes writing the tar archive if all entries were added
-// successfully, and returns any error encountered while adding entries.
-func (b *Builder) Close() error {
-	if b.err != nil {
-		return b.err
-	}
-
-	b.err = b.tw.Close()
-	if b.err != nil {
-		return b.err
-	}
-
-	b.err = ErrClosed
-	return nil
-}
-
 func (b *Builder) ensureParentDirectory(np npath) error {
 	// This function operates entirely on the *parent* of np, to ensure that the
 	// caller can handle the b.entries checks for np itself as it sees fit. As
@@ -159,7 +157,7 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 	// Because np is an npath, we know that it does not contain a leading slash.
 	// path.Dir is documented to Clean the resulting parent path, remove trailing
 	// slashes, and return "." in place of an empty path. Based on these rules, we
-	// know that the result of path.Dir on an npath will itself be a valid npath.
+	// know that the result of path.Dir on an npath will be a valid npath.
 	parent := npath(path.Dir(string(np)))
 
 	if parent == "." {
@@ -168,10 +166,9 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 
 	if typeflag, ok := b.entries[parent]; ok {
 		if typeflag != tar.TypeDir {
-			return DuplicateEntryError(string(parent))
+			return AddError{string(parent), ErrDuplicateEntry}
 		}
-		// TODO: This may be problematic if a user explicitly adds directory entries
-		// without adding their parents first. Might be good to lock that down?
+		// Whoever added this parent should have filled out the rest of the chain.
 		return nil
 	}
 
@@ -185,4 +182,20 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 		Mode:    040755,
 		ModTime: b.modTime,
 	})
+}
+
+// Close finishes writing the tar archive if all entries were added
+// successfully, and returns any error encountered while adding entries.
+func (b *Builder) Close() error {
+	if b.err != nil {
+		return b.err
+	}
+
+	b.err = b.tw.Close()
+	if b.err != nil {
+		return b.err
+	}
+
+	b.err = ErrBuilderClosed
+	return nil
 }
