@@ -19,9 +19,9 @@ import (
 )
 
 var buildCmd = &cobra.Command{
-	Use:   "build [flags] ENTRYPOINT",
+	Use:   "build [flags] ENTRYPOINT IMAGE",
 	Short: "Build a container image from an entrypoint binary",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.ExactArgs(2),
 	Run:   run,
 }
 
@@ -45,7 +45,16 @@ func init() {
 }
 
 func run(_ *cobra.Command, args []string) {
-	entrypointSourcePath := args[0]
+	var (
+		entrypointSourcePath = args[0]
+		targetImageName      = args[1]
+	)
+
+	targetImageReference, err := name.ParseReference(targetImageName)
+	if err != nil {
+		log.Fatal("Invalid image reference: ", err)
+	}
+
 	entrypointBase := filepath.Base(entrypointSourcePath)
 	entrypointTargetPath := "/" + entrypointBase
 
@@ -53,16 +62,13 @@ func run(_ *cobra.Command, args []string) {
 		buildOutputArchive = entrypointSourcePath + ".tar"
 	}
 
-	var (
-		image v1.Image
-		err   error
-	)
-
+	var image v1.Image
 	if buildBaseArchive == "" {
 		log.Println("Building image from scratch")
 		image = empty.Image
 	} else {
-		log.Printf("Loading base image from archive: %s", buildBaseArchive)
+		buildBaseArchive = filepath.Clean(buildBaseArchive)
+		log.Printf("Loading base image from %s", buildBaseArchive)
 		opener := func() (io.ReadCloser, error) { return os.Open(buildBaseArchive) }
 		image, err = tarball.Image(opener, nil)
 		if err != nil {
@@ -120,9 +126,8 @@ func run(_ *cobra.Command, args []string) {
 		log.Fatal("Failed to set entrypoint in image config: ", err)
 	}
 
-	log.Printf("Writing image archive: %s", buildOutputArchive)
-	tag := name.MustParseReference("zeroimage:latest")
-	err = tarball.WriteToFile(buildOutputArchive, tag, image)
+	log.Printf("Writing archive of %s to %s", targetImageReference, buildOutputArchive)
+	err = tarball.WriteToFile(buildOutputArchive, targetImageReference, image)
 	if err != nil {
 		log.Fatal("Unable to write image: ", err)
 	}
