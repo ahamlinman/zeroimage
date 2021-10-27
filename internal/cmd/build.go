@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -36,7 +37,7 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use a Docker tar archive as the base image")
-	buildCmd.Flags().StringVar(&buildOutput, "output", "", "Write a Docker tar archive as output")
+	buildCmd.Flags().StringVar(&buildOutput, "output", "", "Write a Docker tar archive instead of pushing to the daemon")
 	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
 	buildCmd.Flags().StringVar(&buildTargetOS, "target-os", runtime.GOOS, "Set the target OS of the image")
 
@@ -50,17 +51,13 @@ func run(_ *cobra.Command, args []string) {
 		entrypointSourcePath = args[1]
 	)
 
-	targetImageReference, err := name.ParseReference(targetImageName)
+	targetImageReference, err := name.NewTag(targetImageName)
 	if err != nil {
 		log.Fatal("Invalid image reference: ", err)
 	}
 
 	entrypointBase := filepath.Base(entrypointSourcePath)
 	entrypointTargetPath := "/" + entrypointBase
-
-	if buildOutput == "" {
-		buildOutput = entrypointSourcePath + ".tar"
-	}
 
 	var image v1.Image
 	if buildFromArchive == "" {
@@ -126,9 +123,17 @@ func run(_ *cobra.Command, args []string) {
 		log.Fatal("Failed to set entrypoint in image config: ", err)
 	}
 
-	log.Printf("Writing archive of %s to %s", targetImageReference, buildOutput)
-	err = tarball.WriteToFile(buildOutput, targetImageReference, image)
-	if err != nil {
-		log.Fatal("Unable to write image: ", err)
+	if buildOutput != "" {
+		log.Printf("Writing archive of %s to %s", targetImageReference, buildOutput)
+		err = tarball.WriteToFile(buildOutput, targetImageReference, image)
+		if err != nil {
+			log.Fatal("Unable to write image: ", err)
+		}
+	} else {
+		log.Printf("Sending %s to Docker daemon", targetImageReference)
+		_, err = daemon.Write(targetImageReference, image)
+		if err != nil {
+			log.Fatal("Unable to load image into Docker daemon: ", err)
+		}
 	}
 }
