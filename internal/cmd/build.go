@@ -111,10 +111,11 @@ func run(_ *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal("Unable to load image config: ", err)
 	}
-	config := configFile.Config
-	config.Entrypoint = []string{entrypointTargetPath}
-	config.Cmd = nil
-	image, err = mutate.Config(image, config)
+	configFile = configFile.DeepCopy()
+	configFile.Created = v1.Time{Time: time.Now().UTC()}
+	configFile.Config.Entrypoint = []string{entrypointTargetPath}
+	configFile.Config.Cmd = nil
+	image, err = mutate.ConfigFile(image, configFile)
 	if err != nil {
 		log.Fatal("Failed to set entrypoint in image config: ", err)
 	}
