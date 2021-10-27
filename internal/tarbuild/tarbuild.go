@@ -35,7 +35,7 @@ func (aerr AddError) Unwrap() error {
 	return aerr.Err
 }
 
-// Builder creates a tape archive (tar) in an opinionated manner.
+// Builder is a convenient, opinionated tape archive (tar) builder.
 //
 // All entries in the archive will have clean relative paths, and will be owned
 // by UID and GID 0. Before writing an entry, a Builder will add all parent
@@ -81,9 +81,9 @@ func NewBuilder(w io.Writer) *Builder {
 	}
 }
 
-// AddContent adds the provided content to the archive as a file at the provided
-// path. The file will have mode 644, and its modification time will be set to
-// the time at which the Builder was created.
+// AddContent adds the provided content to the archive as a file following the
+// semantics of Add, with mode 644 and a modification time set to the time at
+// which the Builder was created.
 func (b *Builder) AddContent(path string, content []byte) error {
 	return b.Add(path, File{
 		Reader:  bytes.NewReader(content),
@@ -93,13 +93,20 @@ func (b *Builder) AddContent(path string, content []byte) error {
 	})
 }
 
-// Add adds the provided file to the archive at the provided path. It preserves
-// the original size, mode, and modification time reported by file.Stat, and may
+// Add adds the provided file to the archive at the provided path, along with
+// any necessary parent directories as described by Builder. Add preserves the
+// original size, mode, and modification time reported by file.Stat, and may
 // preserve some fields of file.Stat.Sys, but does not preserve the original
 // name, owner, or group.
 //
-// Add reads the provided file in order to copy it into the archive, but does
-// not close it.
+// When file represents a regular file, Add will read it to copy its contents
+// into the archive.
+//
+// When file represents a directory, Add will create an entry for an empty
+// directory using the fields of file.Stat as defined above, without regard to
+// the contents of the directory. To add a directory of files to an archive
+// while preserving Stat fields, first add the directory, then add each file
+// that it contains.
 func (b *Builder) Add(path string, file fs.File) (err error) {
 	if b.err != nil {
 		return b.err
@@ -145,7 +152,10 @@ func (b *Builder) Add(path string, file fs.File) (err error) {
 		return err
 	}
 
-	_, err = io.Copy(b.tw, file)
+	if !stat.IsDir() {
+		_, err = io.Copy(b.tw, file)
+	}
+
 	return err
 }
 
