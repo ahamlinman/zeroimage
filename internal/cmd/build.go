@@ -5,11 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
-	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/spf13/cobra"
 
-	"go.alexhamlin.co/zeroimage/internal/ocibuild"
+	"go.alexhamlin.co/zeroimage/internal/ociarchive"
+	"go.alexhamlin.co/zeroimage/internal/tarlayer"
 )
 
 var buildCmd = &cobra.Command{
@@ -47,27 +51,34 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
-	var image *ocibuild.Image
+	var image v1.Image
 	if buildFromArchive == "" {
 		log.Println("Building image from scratch")
-		image = &ocibuild.Image{
-			Config: specsv1.Image{OS: buildTargetOS, Architecture: buildTargetArch},
-		}
+		image = empty.Image
 	} else {
 		log.Printf("Loading base image: %s", buildFromArchive)
 		base, err := os.Open(buildFromArchive)
 		if err != nil {
 			log.Fatal("Unable to load base image: ", err)
 		}
-		image, err = ocibuild.LoadArchive(base)
+		archive, err := ociarchive.LoadArchive(base)
 		if err != nil {
 			log.Fatal("Unable to load base image: ", err)
 		}
 		base.Close()
-		if image.Config.OS != buildTargetOS || image.Config.Architecture != buildTargetArch {
+		image, err = archive.Image()
+		if err != nil {
+			log.Fatal("Unable to load base image: ", err)
+		}
+
+		configFile, err := image.ConfigFile()
+		if err != nil {
+			log.Fatal("Unable to load base image: ", err)
+		}
+		if configFile.OS != buildTargetOS || configFile.Architecture != buildTargetArch {
 			log.Fatalf(
 				"Base image platform %s/%s does not match output platform %s/%s",
-				image.Config.OS, image.Config.Architecture,
+				configFile.OS, configFile.Architecture,
 				buildTargetOS, buildTargetArch,
 			)
 		}
@@ -78,22 +89,45 @@ func runBuild(_ *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal("Unable to read entrypoint: ", err)
 	}
-	layer := image.NewLayer()
-	layer.Add(entrypointTargetPath, entrypoint)
-	if err := layer.Close(); err != nil {
+	builder := tarlayer.NewBuilder()
+	builder.Add(entrypointTargetPath, entrypoint)
+	layer, err := builder.Finish()
+	if err != nil {
 		log.Fatal("Failed to build entrypoint layer: ", err)
 	}
 	entrypoint.Close()
 
-	image.Config.Config.Entrypoint = []string{entrypointTargetPath}
-	image.Config.Config.Cmd = nil
+	image, err = mutate.Append(image, mutate.Addendum{
+		Layer: layer,
+		History: v1.History{
+			Created:   v1.Time{Time: time.Now().UTC()},
+			CreatedBy: "zeroimage",
+			Comment:   "entrypoint layer",
+		},
+	})
+	if err != nil {
+		log.Fatal("Failed to add entrypoint layer: ", err)
+	}
+
+	configFile, err := image.ConfigFile()
+	if err != nil {
+		log.Fatal("Unable to read image config: ", err)
+	}
+	configFile.OS = buildTargetOS
+	configFile.Architecture = buildTargetArch
+	configFile.Config.Entrypoint = []string{entrypointTargetPath}
+	configFile.Config.Cmd = nil
+	image, err = mutate.ConfigFile(image, configFile)
+	if err != nil {
+		log.Fatal("Failed to configure image: ", err)
+	}
 
 	log.Printf("Writing image: %s", buildOutput)
 	output, err := os.Create(buildOutput)
 	if err != nil {
 		log.Fatal("Unable to create output file: ", err)
 	}
-	if err := image.WriteArchive(output); err != nil {
+	if err := ociarchive.WriteImage(image, output); err != nil {
 		log.Fatal("Failed to write image: ", err)
 	}
 	if err := output.Close(); err != nil {
