@@ -55,59 +55,9 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
-	var image v1.Image
-	if buildFrom == "" && buildFromArchive == "" {
-		log.Println("Building image from scratch")
-		image = empty.Image
-	} else if buildFrom != "" {
-		log.Printf("Using base image from registry: %s", buildFrom)
-		ref, err := name.ParseReference(buildFrom)
-		if err != nil {
-			log.Fatal("Unable to use registry image: ", err)
-		}
-		image, err = remote.Image(ref)
-		if err != nil {
-			log.Fatal("Unable to use registry image: ", err)
-		}
-
-		configFile, err := image.ConfigFile()
-		if err != nil {
-			log.Fatal("Unable to use registry image: ", err)
-		}
-		if configFile.OS != buildTargetOS || configFile.Architecture != buildTargetArch {
-			log.Fatalf(
-				"Base image platform %s/%s does not match output platform %s/%s",
-				configFile.OS, configFile.Architecture,
-				buildTargetOS, buildTargetArch,
-			)
-		}
-	} else {
-		log.Printf("Loading base image: %s", buildFromArchive)
-		base, err := os.Open(buildFromArchive)
-		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
-		}
-		archive, err := ociarchive.LoadArchive(base)
-		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
-		}
-		base.Close()
-		image, err = archive.Image()
-		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
-		}
-
-		configFile, err := image.ConfigFile()
-		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
-		}
-		if configFile.OS != buildTargetOS || configFile.Architecture != buildTargetArch {
-			log.Fatalf(
-				"Base image platform %s/%s does not match output platform %s/%s",
-				configFile.OS, configFile.Architecture,
-				buildTargetOS, buildTargetArch,
-			)
-		}
+	image, err := loadBuildBase()
+	if err != nil {
+		log.Fatal("Unable to load base image: ", err)
 	}
 
 	log.Printf("Adding entrypoint: %s", entrypointTargetPath)
@@ -139,8 +89,13 @@ func runBuild(_ *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal("Unable to read image config: ", err)
 	}
-	configFile.OS = buildTargetOS
-	configFile.Architecture = buildTargetArch
+	if configFile.OS != buildTargetOS || configFile.Architecture != buildTargetArch {
+		log.Fatalf(
+			"Base image platform %s/%s does not match output platform %s/%s",
+			configFile.OS, configFile.Architecture,
+			buildTargetOS, buildTargetArch,
+		)
+	}
 	configFile.Config.Entrypoint = []string{entrypointTargetPath}
 	configFile.Config.Cmd = nil
 	image, err = mutate.ConfigFile(image, configFile)
@@ -159,4 +114,52 @@ func runBuild(_ *cobra.Command, args []string) {
 	if err := output.Close(); err != nil {
 		log.Fatal("Failed to write image: ", err)
 	}
+}
+
+func loadBuildBase() (v1.Image, error) {
+	switch {
+	case buildFromArchive != "":
+		return loadArchiveImageBase()
+	case buildFrom != "":
+		return loadRegistryBuildBase()
+	default:
+		return loadScratchBuildBase()
+	}
+}
+
+func loadScratchBuildBase() (v1.Image, error) {
+	log.Println("Building image from scratch")
+
+	return mutate.ConfigFile(empty.Image, &v1.ConfigFile{
+		OS:           buildTargetOS,
+		Architecture: buildTargetArch,
+	})
+}
+
+func loadRegistryBuildBase() (v1.Image, error) {
+	log.Printf("Using base image from registry: %s", buildFrom)
+
+	ref, err := name.ParseReference(buildFrom)
+	if err != nil {
+		log.Fatal("Unable to use registry image: ", err)
+	}
+
+	return remote.Image(ref)
+}
+
+func loadArchiveImageBase() (v1.Image, error) {
+	log.Printf("Using base image from archive: %s", buildFromArchive)
+
+	base, err := os.Open(buildFromArchive)
+	if err != nil {
+		log.Fatal("Unable to load base image: ", err)
+	}
+	defer base.Close()
+
+	archive, err := ociarchive.LoadArchive(base)
+	if err != nil {
+		log.Fatal("Unable to load base image: ", err)
+	}
+
+	return archive.Image()
 }
