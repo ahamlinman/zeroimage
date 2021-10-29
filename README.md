@@ -1,7 +1,7 @@
 # zeroimage
 
 ```sh
-go run go.alexhamlin.co/zeroimage@latest some-program
+zeroimage build some-program
 ```
 
 …is like building the following Dockerfile:
@@ -21,8 +21,6 @@ runtime.
 
 ### Why zeroimage?
 
-- It imports [few dependencies][imports] outside of the Go standard library, so
-  you can quickly install and run it even with `go run`.
 - It doesn't depend on a container runtime, which can simplify image builds for
   cross-compiled programs.
 - It's unopinionated about the rest of your toolchain, and supports
@@ -97,6 +95,8 @@ Other notable caveats include, but are not limited to:
 
 ## Future Work
 
+- Include built in OCI registry support, to reduce the heavy dependency on
+  external tools like Skopeo.
 - Instead of building `FROM scratch` by default, provide a built-in minimal base
   that removes some of the caveats noted above. For example, automatically
   bundle a standard `/etc/passwd` and a known set of TLS roots by default.
