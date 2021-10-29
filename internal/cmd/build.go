@@ -7,9 +7,11 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/spf13/cobra"
 
 	"go.alexhamlin.co/zeroimage/internal/ociarchive"
@@ -24,6 +26,7 @@ var buildCmd = &cobra.Command{
 }
 
 var (
+	buildFrom        string
 	buildFromArchive string
 	buildOutput      string
 	buildTargetArch  string
@@ -33,6 +36,7 @@ var (
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
+	buildCmd.Flags().StringVar(&buildFrom, "from", "", "Use an existing image from a registry as a base")
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
 	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
@@ -52,9 +56,31 @@ func runBuild(_ *cobra.Command, args []string) {
 	}
 
 	var image v1.Image
-	if buildFromArchive == "" {
+	if buildFrom == "" && buildFromArchive == "" {
 		log.Println("Building image from scratch")
 		image = empty.Image
+	} else if buildFrom != "" {
+		log.Printf("Using base image from registry: %s", buildFrom)
+		ref, err := name.ParseReference(buildFrom)
+		if err != nil {
+			log.Fatal("Unable to use registry image: ", err)
+		}
+		image, err = remote.Image(ref)
+		if err != nil {
+			log.Fatal("Unable to use registry image: ", err)
+		}
+
+		configFile, err := image.ConfigFile()
+		if err != nil {
+			log.Fatal("Unable to use registry image: ", err)
+		}
+		if configFile.OS != buildTargetOS || configFile.Architecture != buildTargetArch {
+			log.Fatalf(
+				"Base image platform %s/%s does not match output platform %s/%s",
+				configFile.OS, configFile.Architecture,
+				buildTargetOS, buildTargetArch,
+			)
+		}
 	} else {
 		log.Printf("Loading base image: %s", buildFromArchive)
 		base, err := os.Open(buildFromArchive)
