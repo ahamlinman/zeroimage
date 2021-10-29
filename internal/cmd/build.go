@@ -60,7 +60,7 @@ func runBuild(_ *cobra.Command, args []string) {
 		log.Fatal("Unable to load base image: ", err)
 	}
 
-	log.Printf("Adding entrypoint: %s", entrypointTargetPath)
+	log.Printf("Using entrypoint: %s", entrypointTargetPath)
 	entrypoint, err := os.Open(entrypointSourcePath)
 	if err != nil {
 		log.Fatal("Unable to read entrypoint: ", err)
@@ -103,7 +103,7 @@ func runBuild(_ *cobra.Command, args []string) {
 		log.Fatal("Failed to configure image: ", err)
 	}
 
-	log.Printf("Writing image: %s", buildOutput)
+	log.Printf("Writing image to archive: %s", buildOutput)
 	output, err := os.Create(buildOutput)
 	if err != nil {
 		log.Fatal("Unable to create output file: ", err)
@@ -119,17 +119,18 @@ func runBuild(_ *cobra.Command, args []string) {
 func loadBuildBase() (v1.Image, error) {
 	switch {
 	case buildFromArchive != "":
+		log.Printf("Using base image from archive: %s", buildFromArchive)
 		return loadArchiveImageBase()
 	case buildFrom != "":
+		log.Printf("Using base image from registry: %s", buildFrom)
 		return loadRegistryBuildBase()
 	default:
+		log.Println("Building image from scratch")
 		return loadScratchBuildBase()
 	}
 }
 
 func loadScratchBuildBase() (v1.Image, error) {
-	log.Println("Building image from scratch")
-
 	return mutate.ConfigFile(empty.Image, &v1.ConfigFile{
 		OS:           buildTargetOS,
 		Architecture: buildTargetArch,
@@ -137,8 +138,6 @@ func loadScratchBuildBase() (v1.Image, error) {
 }
 
 func loadRegistryBuildBase() (v1.Image, error) {
-	log.Printf("Using base image from registry: %s", buildFrom)
-
 	ref, err := name.ParseReference(buildFrom)
 	if err != nil {
 		log.Fatal("Unable to use registry image: ", err)
@@ -148,8 +147,6 @@ func loadRegistryBuildBase() (v1.Image, error) {
 }
 
 func loadArchiveImageBase() (v1.Image, error) {
-	log.Printf("Using base image from archive: %s", buildFromArchive)
-
 	base, err := os.Open(buildFromArchive)
 	if err != nil {
 		log.Fatal("Unable to load base image: ", err)
