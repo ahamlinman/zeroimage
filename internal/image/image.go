@@ -53,38 +53,6 @@ func (idx Index) SelectByPlatform(platform specsv1.Platform) Index {
 	return selected
 }
 
-func platformMatches(requested, comparand specsv1.Platform) bool {
-	if requested.Architecture != "" && requested.Architecture != comparand.Architecture {
-		return false
-	}
-	if requested.OS != "" && requested.OS != comparand.OS {
-		return false
-	}
-	if requested.OSVersion != "" && requested.OSVersion != comparand.OSVersion {
-		return false
-	}
-	if !featuresMatch(requested.OSFeatures, comparand.OSFeatures) {
-		return false
-	}
-	if requested.Variant != "" && requested.Variant != comparand.Variant {
-		return false
-	}
-	return true
-}
-
-func featuresMatch(requested, comparand []string) bool {
-	comparandSet := make(map[string]bool, len(comparand))
-	for _, cmp := range comparand {
-		comparandSet[cmp] = true
-	}
-	for _, req := range requested {
-		if !comparandSet[req] {
-			return false
-		}
-	}
-	return true
-}
-
 // Image represents a platform specific container image.
 type Image struct {
 	Layers []Layer

@@ -23,11 +23,12 @@ var buildCmd = &cobra.Command{
 	Run:   runBuild,
 }
 
+var defaultPlatform = runtime.GOOS + "/" + runtime.GOARCH
+
 var (
-	buildFromArchive string
-	buildOutput      string
-	buildTargetArch  string
-	buildTargetOS    string
+	buildFromArchive    string
+	buildOutput         string
+	buildTargetPlatform string
 )
 
 func init() {
@@ -35,8 +36,7 @@ func init() {
 
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
-	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
-	buildCmd.Flags().StringVar(&buildTargetOS, "target-os", runtime.GOOS, "Set the target OS of the image")
+	buildCmd.Flags().StringVar(&buildTargetPlatform, "target-platform", defaultPlatform, "Set the target platform of the image")
 
 	buildCmd.MarkFlagFilename("from-archive", "tar")
 	buildCmd.MarkFlagFilename("output", "tar")
@@ -51,9 +51,9 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
-	targetPlatform := specsv1.Platform{
-		OS:           buildTargetOS,
-		Architecture: buildTargetArch,
+	targetPlatform, err := image.ParsePlatform(buildTargetPlatform)
+	if err != nil {
+		log.Fatal("Could not parse target platform: ", err)
 	}
 
 	var img image.Image
@@ -74,8 +74,8 @@ func runBuild(_ *cobra.Command, args []string) {
 		platformIndex := index.SelectByPlatform(targetPlatform)
 		if len(platformIndex) != 1 {
 			log.Fatalf(
-				"Could not find a single base image matching the %s/%s platform",
-				buildTargetOS, buildTargetArch,
+				"Could not find a single base image matching the %s platform",
+				image.FormatPlatform(targetPlatform),
 			)
 		}
 		img, err = platformIndex[0].Image(context.Background())
