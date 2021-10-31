@@ -1,4 +1,4 @@
-package ocibuild
+package ociarchive
 
 import (
 	"archive/tar"
@@ -13,6 +13,8 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"go.alexhamlin.co/zeroimage/internal/image"
 )
 
 // LoadArchive loads an OCI image from a tar archive into an Image.
@@ -20,10 +22,10 @@ import (
 // The archive must comply with the OCI Image Layout Specification, and must
 // contain exactly one image. All blobs referenced by manifests must appear in
 // the archive.
-func LoadArchive(r io.Reader) (*Image, error) {
+func LoadArchive(r io.Reader) (image.Image, error) {
 	var (
 		ll       loadedLayout
-		img      Image
+		img      image.Image
 		manifest specsv1.Manifest
 	)
 
@@ -34,14 +36,14 @@ func LoadArchive(r io.Reader) (*Image, error) {
 	// easily process, which is based directly on the expected layout defined by
 	// https://github.com/opencontainers/image-spec/blob/main/image-layout.md.
 	if err := ll.populateFromTar(tar.NewReader(r)); err != nil {
-		return nil, fmt.Errorf("invalid archive: %w", err)
+		return image.Image{}, fmt.Errorf("invalid archive: %w", err)
 	}
 
 	if ll.Layout == nil || ll.Layout.Version == "" {
-		return nil, fmt.Errorf("invalid archive: missing or invalid %s", specsv1.ImageLayoutFile)
+		return image.Image{}, fmt.Errorf("invalid archive: missing or invalid %s", specsv1.ImageLayoutFile)
 	}
 	if ll.Index == nil {
-		return nil, errors.New("invalid archive: missing index.json")
+		return image.Image{}, errors.New("invalid archive: missing index.json")
 	}
 
 	// In theory we could support multi-platform images by having the user of this
@@ -49,31 +51,31 @@ func LoadArchive(r io.Reader) (*Image, error) {
 	// not a critical feature. Base archives will probably come from skopeo, which
 	// writes single-platform layouts by default.
 	if len(ll.Index.Manifests) != 1 {
-		return nil, errors.New("archive must contain exactly 1 manifest")
+		return image.Image{}, errors.New("archive must contain exactly 1 manifest")
 	}
 	if ll.Index.Manifests[0].MediaType != specsv1.MediaTypeImageManifest {
-		return nil, errors.New("unsupported media type for manifest")
+		return image.Image{}, errors.New("unsupported media type for manifest")
 	}
 
 	err := ll.extractJSON(ll.Index.Manifests[0].Digest, &manifest)
 	if err != nil {
-		return nil, fmt.Errorf("reading manifest: %w", err)
+		return image.Image{}, fmt.Errorf("reading manifest: %w", err)
 	}
 
 	if manifest.Config.MediaType != specsv1.MediaTypeImageConfig {
-		return nil, errors.New("unsupported media type for image config")
+		return image.Image{}, errors.New("unsupported media type for image config")
 	}
 
 	// This is the part where we finally start loading the things we care about
-	// into an ocibuilder.Image.
+	// into an image.Image.
 
 	err = ll.extractJSON(manifest.Config.Digest, &img.Config)
 	if err != nil {
-		return nil, fmt.Errorf("reading image config: %w", err)
+		return image.Image{}, fmt.Errorf("reading image config: %w", err)
 	}
 
 	if len(img.Config.RootFS.DiffIDs) != len(manifest.Layers) {
-		return nil, fmt.Errorf("manifest layer count does not match DiffID count")
+		return image.Image{}, fmt.Errorf("manifest layer count does not match DiffID count")
 	}
 	for i, layerDesc := range manifest.Layers {
 		blob, ok := ll.Blobs[layerDesc.Digest]
@@ -82,9 +84,9 @@ func LoadArchive(r io.Reader) (*Image, error) {
 			// which case the missing blobs SHOULD be fulfilled by an external blob
 			// store." For our purposes, it should not be a big deal to ignore the
 			// part about external blob stores.
-			return nil, fmt.Errorf("blob %s not found", layerDesc.Digest)
+			return image.Image{}, fmt.Errorf("blob %s not found", layerDesc.Digest)
 		}
-		img.Layers = append(img.Layers, Layer{
+		img.Layers = append(img.Layers, image.Layer{
 			Descriptor: layerDesc,
 			DiffID:     img.Config.RootFS.DiffIDs[i],
 			Blob: func(_ context.Context) (io.ReadCloser, error) {
@@ -93,26 +95,7 @@ func LoadArchive(r io.Reader) (*Image, error) {
 		})
 	}
 
-	// Since ocibuild always appends history entries for new layers, we're going
-	// to make sure that all existing layers have history entries even if the
-	// source image did not provide them.
-	layersWithoutHistory := len(img.Layers)
-	for _, h := range img.Config.History {
-		if layersWithoutHistory == 0 {
-			break
-		}
-		if !h.EmptyLayer {
-			layersWithoutHistory--
-		}
-	}
-	for i := 0; i < layersWithoutHistory; i++ {
-		img.Config.History = append(img.Config.History, specsv1.History{
-			Created: img.Config.Created,
-			Comment: "imported by zeroimage",
-		})
-	}
-
-	return &img, nil
+	return img, nil
 }
 
 type loadedLayout struct {
