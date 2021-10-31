@@ -1,3 +1,4 @@
+// Package cmd implements the zeroimage command line interface.
 package cmd
 
 import (
