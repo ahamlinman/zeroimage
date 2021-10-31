@@ -88,11 +88,13 @@ func runBuild(_ *cobra.Command, args []string) {
 		log.Fatal("Failed to build entrypoint layer: ", err)
 	}
 
-	img.AppendLayer(layer, specsv1.History{
+	img.AppendLayer(layer)
+	img.Config.History = append(img.Config.History, specsv1.History{
 		Created:   now(),
 		CreatedBy: "zeroimage",
 		Comment:   "entrypoint layer",
 	})
+
 	img.Config.Created = now()
 	img.Config.Config.Entrypoint = []string{entrypointTargetPath}
 	img.Config.Config.Cmd = nil

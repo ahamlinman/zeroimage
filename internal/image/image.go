@@ -19,8 +19,7 @@ type Layer struct {
 	Blob       func(context.Context) (io.ReadCloser, error)
 }
 
-func (img *Image) AppendLayer(layer Layer, hist ...specsv1.History) {
+func (img *Image) AppendLayer(layer Layer) {
 	img.Layers = append(img.Layers, layer)
 	img.Config.RootFS.DiffIDs = append(img.Config.RootFS.DiffIDs, layer.DiffID)
-	img.Config.History = append(img.Config.History, hist...)
 }
