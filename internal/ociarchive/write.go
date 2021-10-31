@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"time"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
@@ -14,8 +13,6 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
-// WriteArchive writes the image as a tar archive to w, with the creation time
-// set to the current time.
 func WriteArchive(img image.Image, w io.Writer) error {
 	iw := imageWriter{
 		tar:   tarbuild.NewBuilder(w),
@@ -41,12 +38,9 @@ func (iw *imageWriter) WriteArchive() error {
 		}
 	}
 
-	config := iw.image.Config // shallow copy
-	config.Created = now()
-
 	manifest := specsv1.Manifest{
 		Versioned: specs.Versioned{SchemaVersion: 2},
-		Config:    iw.addJSONBlob(specsv1.MediaTypeImageConfig, config),
+		Config:    iw.addJSONBlob(specsv1.MediaTypeImageConfig, iw.image.Config),
 	}
 	for _, layer := range iw.image.Layers {
 		manifest.Layers = append(manifest.Layers, layer.Descriptor)
@@ -109,9 +103,4 @@ func mustJSONMarshal(v interface{}) []byte {
 		panic(err)
 	}
 	return encoded
-}
-
-func now() *time.Time {
-	now := time.Now().UTC()
-	return &now
 }

@@ -93,6 +93,7 @@ func runBuild(_ *cobra.Command, args []string) {
 		CreatedBy: "zeroimage",
 		Comment:   "entrypoint layer",
 	})
+	img.Config.Created = now()
 	img.Config.Config.Entrypoint = []string{entrypointTargetPath}
 	img.Config.Config.Cmd = nil
 
