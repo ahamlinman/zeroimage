@@ -16,36 +16,34 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
-// Image represents a full OCI image, including the contents of all layers.
 type Image struct {
 	Config specsv1.Image
 	Layers []Layer
 }
 
-// Layer represents a single layer in an OCI image, including its full content.
 type Layer struct {
 	Descriptor specsv1.Descriptor
 	DiffID     digest.Digest
 	Blob       func(context.Context) (io.ReadCloser, error)
 }
 
-// LayerBuilder provides an interface to create a new filesystem layer in an
-// image.
+func (img *Image) AppendLayer(layer Layer, hist ...specsv1.History) {
+	img.Layers = append(img.Layers, layer)
+	img.Config.RootFS.DiffIDs = append(img.Config.RootFS.DiffIDs, layer.DiffID)
+	img.Config.History = append(img.Config.History, hist...)
+}
+
 type LayerBuilder struct {
 	*tarbuild.Builder
 
-	img      *Image
 	buf      bytes.Buffer
 	zw       *gzip.Writer
 	tarHash  hash.Hash
 	gzipHash hash.Hash
 }
 
-// NewLayer returns a tar archive builder that will append a new layer to img
-// when closed.
-func (img *Image) NewLayer() *LayerBuilder {
+func NewLayerBuilder() *LayerBuilder {
 	lb := &LayerBuilder{
-		img:      img,
 		tarHash:  digest.Canonical.Hash(),
 		gzipHash: digest.Canonical.Hash(),
 	}
@@ -54,16 +52,15 @@ func (img *Image) NewLayer() *LayerBuilder {
 	return lb
 }
 
-// Close appends the layer created by lb to the associated image.
-func (lb *LayerBuilder) Close() error {
+func (lb *LayerBuilder) Finish() (Layer, error) {
 	if err := lb.Builder.Close(); err != nil {
-		return err
+		return Layer{}, err
 	}
 	if err := lb.zw.Close(); err != nil {
-		return err
+		return Layer{}, err
 	}
 
-	layer := Layer{
+	return Layer{
 		Descriptor: specsv1.Descriptor{
 			MediaType: specsv1.MediaTypeImageLayerGzip,
 			Digest:    digest.NewDigest(digest.Canonical, lb.gzipHash),
@@ -73,16 +70,7 @@ func (lb *LayerBuilder) Close() error {
 		Blob: func(_ context.Context) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(lb.buf.Bytes())), nil
 		},
-	}
-
-	lb.img.Layers = append(lb.img.Layers, layer)
-	lb.img.Config.RootFS.DiffIDs = append(lb.img.Config.RootFS.DiffIDs, layer.DiffID)
-	lb.img.Config.History = append(lb.img.Config.History, specsv1.History{
-		Created:   now(),
-		CreatedBy: "zeroimage",
-	})
-
-	return nil
+	}, nil
 }
 
 // WriteArchive writes the image as a tar archive to w, with the creation time

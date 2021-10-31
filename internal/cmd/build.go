@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
@@ -78,13 +79,18 @@ func runBuild(_ *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal("Unable to read entrypoint: ", err)
 	}
-	layer := image.NewLayer()
-	layer.Add(entrypointTargetPath, entrypoint)
-	if err := layer.Close(); err != nil {
+	builder := ocibuild.NewLayerBuilder()
+	builder.Add(entrypointTargetPath, entrypoint)
+	layer, err := builder.Finish()
+	if err != nil {
 		log.Fatal("Failed to build entrypoint layer: ", err)
 	}
-	entrypoint.Close()
 
+	image.AppendLayer(layer, specsv1.History{
+		Created:   now(),
+		CreatedBy: "zeroimage",
+		Comment:   "entrypoint layer",
+	})
 	image.Config.Config.Entrypoint = []string{entrypointTargetPath}
 	image.Config.Config.Cmd = nil
 
@@ -99,4 +105,9 @@ func runBuild(_ *cobra.Command, args []string) {
 	if err := output.Close(); err != nil {
 		log.Fatal("Failed to write image: ", err)
 	}
+}
+
+func now() *time.Time {
+	now := time.Now().UTC()
+	return &now
 }
