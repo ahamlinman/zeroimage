@@ -14,7 +14,7 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
-type LayerBuilder struct {
+type Builder struct {
 	*tarbuild.Builder
 
 	buf      bytes.Buffer
@@ -23,8 +23,8 @@ type LayerBuilder struct {
 	gzipHash hash.Hash
 }
 
-func NewLayerBuilder() *LayerBuilder {
-	lb := &LayerBuilder{
+func NewBuilder() *Builder {
+	lb := &Builder{
 		tarHash:  digest.Canonical.Hash(),
 		gzipHash: digest.Canonical.Hash(),
 	}
@@ -33,7 +33,7 @@ func NewLayerBuilder() *LayerBuilder {
 	return lb
 }
 
-func (lb *LayerBuilder) Finish() (image.Layer, error) {
+func (lb *Builder) Finish() (image.Layer, error) {
 	if err := lb.Builder.Close(); err != nil {
 		return image.Layer{}, err
 	}
