@@ -93,13 +93,13 @@ func (b *Builder) AddContent(path string, content []byte) error {
 	})
 }
 
-// Add adds the provided file to the archive at the provided path, along with
-// any necessary parent directories as described by Builder. Add preserves the
+// Add adds the provided file to the archive at the provided path, creating any
+// necessary parent directories as described by Builder. Add preserves the
 // original size, mode, and modification time reported by file.Stat, and may
 // preserve some fields of file.Stat.Sys, but does not preserve the original
 // name, owner, or group.
 //
-// When file represents a regular file, Add will read it to copy its contents
+// When file represents a regular file, Add will immediately copy its contents
 // into the archive.
 //
 // When file represents a directory, Add will create an entry for an empty
@@ -176,7 +176,10 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 
 	if typeflag, ok := b.entries[parent]; ok {
 		if typeflag != tar.TypeDir {
-			return AddError{string(parent), ErrDuplicateEntry}
+			return AddError{
+				Path: string(parent),
+				Err:  fmt.Errorf("%w: cannot add directory where non-directory exists", ErrDuplicateEntry),
+			}
 		}
 		// Whoever added this parent should have filled out the rest of the chain.
 		return nil

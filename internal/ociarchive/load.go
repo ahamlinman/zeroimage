@@ -17,11 +17,13 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/image"
 )
 
-// LoadArchive loads an OCI image from a tar archive into an Image.
+// LoadArchive loads a container image from a tar archive whose contents comply
+// with the OCI Image Layout Specification, and that contains exactly one image
+// manifest.
 //
-// The archive must comply with the OCI Image Layout Specification, and must
-// contain exactly one image. All blobs referenced by manifests must appear in
-// the archive.
+// The current implementation of LoadArchive buffers all of the archive's blobs
+// in memory, and requires that all blobs referenced by manifests appear in the
+// archive itself.
 func LoadArchive(r io.Reader) (image.Image, error) {
 	var (
 		ll       loadedLayout
@@ -29,12 +31,8 @@ func LoadArchive(r io.Reader) (image.Image, error) {
 		manifest specsv1.Manifest
 	)
 
-	// There's a big impedance mismatch between the OCI layout spec, which is all
-	// about content-addressable blobs indexed by manifest files, and tar
-	// archives, which are not great at facilitating random access to said blobs.
-	// We start by loading the entire image into a structure that we can more
-	// easily process, which is based directly on the expected layout defined by
-	// https://github.com/opencontainers/image-spec/blob/main/image-layout.md.
+	// In theory we could take some kind of "opener" instead of a reader, and
+	// avoid loading the entire archive into memory like this.
 	if err := ll.populateFromTar(tar.NewReader(r)); err != nil {
 		return image.Image{}, fmt.Errorf("invalid archive: %w", err)
 	}
@@ -46,10 +44,7 @@ func LoadArchive(r io.Reader) (image.Image, error) {
 		return image.Image{}, errors.New("invalid archive: missing index.json")
 	}
 
-	// In theory we could support multi-platform images by having the user of this
-	// method request the specific platform they're looking for, but it's probably
-	// not a critical feature. Base archives will probably come from skopeo, which
-	// writes single-platform layouts by default.
+	// In theory we could set up images for all of the manifests in the archive.
 	if len(ll.Index.Manifests) != 1 {
 		return image.Image{}, errors.New("archive must contain exactly 1 manifest")
 	}

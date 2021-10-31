@@ -13,6 +13,8 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
+// WriteArchive writes a single container image as a tar archive whose contents
+// comply with the OCI Image Layout Specification.
 func WriteArchive(img image.Image, w io.Writer) error {
 	iw := imageWriter{
 		tar:   tarbuild.NewBuilder(w),

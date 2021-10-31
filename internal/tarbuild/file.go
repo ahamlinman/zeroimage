@@ -7,11 +7,10 @@ import (
 	"time"
 )
 
-// File implements fs.File for an io.Reader, using explicitly defined values for
-// the values provided by the associated fs.FileInfo.
+// File represents a file in a tar archive, the contents of which are produced
+// by the embedded io.Reader, and the metadata of which is explicitly defined.
 type File struct {
 	io.Reader
-	Name    string
 	Size    int64
 	Mode    fs.FileMode
 	ModTime time.Time
@@ -38,9 +37,11 @@ type FileInfo struct {
 	File
 }
 
-// Name returns the Name of the underlying File.
+// Name returns the empty string. The tarbuild package ignores this field when
+// adding a file to an archive, as the user is expected to provide a full
+// destination path rather than a basename alone.
 func (fi FileInfo) Name() string {
-	return fi.File.Name
+	return ""
 }
 
 // Size returns the Size of the underlying File.
@@ -68,10 +69,9 @@ func (fi FileInfo) Sys() interface{} {
 	return fi.File.Sys
 }
 
-// Dir implements an fs.File representing an empty directory, using explicitly
-// defined values for the values provided by the associated fs.FileInfo.
+// Dir represents a tar entry for an empty directory, the metadata of which is
+// explicitly defined.
 type Dir struct {
-	Name    string
 	Mode    fs.FileMode
 	ModTime time.Time
 	Sys     interface{}
@@ -101,9 +101,11 @@ type DirInfo struct {
 	Dir
 }
 
-// Name returns the Name of the underlying Dir.
+// Name returns the empty string. The tarbuild package ignores this field when
+// adding a directory to an archive, as the user is expected to provide a full
+// destination path rather than a basename alone.
 func (di DirInfo) Name() string {
-	return di.Dir.Name
+	return ""
 }
 
 // Size returns 0.
