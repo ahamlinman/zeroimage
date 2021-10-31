@@ -1,3 +1,4 @@
+// Package tarbuild provides a simplified interface to build tar archives.
 package tarbuild
 
 import (

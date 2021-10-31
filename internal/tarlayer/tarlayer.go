@@ -1,3 +1,4 @@
+// Package tarlayer builds container image layers by constructing tar archives.
 package tarlayer
 
 import (
