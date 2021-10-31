@@ -40,20 +40,12 @@ func (iw *imageWriter) WriteArchive() error {
 		}
 	}
 
-	// As of this writing, there are a few fields defined by the OCI image
-	// configuration spec that the associated Go type does not yet implement.
-	imageConfig := struct {
-		specsv1.Image
-		OSVersion  string   `json:"os.version,omitempty"`
-		OSFeatures []string `json:"os.features,omitempty"`
-		Variant    string   `json:"variant,omitempty"`
-	}{
+	imageConfig := extendedImage{
 		Image:      iw.image.Config,
 		OSVersion:  iw.image.Platform.OSVersion,
 		OSFeatures: iw.image.Platform.OSFeatures,
 		Variant:    iw.image.Platform.Variant,
 	}
-
 	manifest := specsv1.Manifest{
 		Versioned:   specs.Versioned{SchemaVersion: 2},
 		Config:      iw.addJSONBlob(specsv1.MediaTypeImageConfig, imageConfig),

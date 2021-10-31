@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -50,27 +51,36 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
+	targetPlatform := specsv1.Platform{
+		OS:           buildTargetOS,
+		Architecture: buildTargetArch,
+	}
+
 	var img image.Image
 	if buildFromArchive == "" {
 		log.Println("Building image from scratch")
-		img.SetPlatform(specsv1.Platform{OS: buildTargetOS, Architecture: buildTargetArch})
+		img.SetPlatform(targetPlatform)
 	} else {
 		log.Printf("Loading base image: %s", buildFromArchive)
 		base, err := os.Open(buildFromArchive)
 		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
+			log.Fatal("Unable to load base archive: ", err)
 		}
-		img, err = ociarchive.LoadArchive(base)
+		index, err := ociarchive.LoadArchive(base)
 		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
+			log.Fatal("Unable to load base archive: ", err)
 		}
 		base.Close()
-		if img.Config.OS != buildTargetOS || img.Config.Architecture != buildTargetArch {
+		platformIndex := index.SelectByPlatform(targetPlatform)
+		if len(platformIndex) != 1 {
 			log.Fatalf(
-				"Base image platform %s/%s does not match output platform %s/%s",
-				img.Config.OS, img.Config.Architecture,
+				"Could not find a single base image matching the %s/%s platform",
 				buildTargetOS, buildTargetArch,
 			)
+		}
+		img, err = platformIndex[0].Image(context.Background())
+		if err != nil {
+			log.Fatal("Unable to load base image: ", err)
 		}
 	}
 

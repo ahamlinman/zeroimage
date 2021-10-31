@@ -11,7 +11,81 @@ import (
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// Image represents a container image targeting a single platform.
+// Index represents an OCI image index that references platform specific
+// container images.
+type Index []IndexEntry
+
+// IndexEntry represents a reference to a platform specific container image in
+// an OCI image index.
+type IndexEntry struct {
+	Platform specsv1.Platform
+	Image    func(context.Context) (Image, error)
+}
+
+// SelectByPlatform returns a new Index of the images in idx where all non empty
+// fields of platform are an exact match or subset of the image's Platform
+// values.
+//
+// Examples
+//
+// If idx references images for both the v6 and v7 variants of the linux/arm
+// platform, and platform.Variant is empty, SelectByPlatform will return an
+// index referencing both images.
+//
+// If idx only references an image for the v8 variant of the linux/arm64
+// platform, and platform.Variant is empty, SelectByPlatform will return an
+// index referencing only that image.
+//
+// If idx only references an image for the v8 variant of the linux/arm64
+// platform, and platform.Variant is set to "v9", SelectByPlatform will return
+// an empty index.
+//
+// If idx includes Windows images and platform.OSFeatures includes "win32k",
+// SelectByPlatform will only return images that include the "win32k" feature.
+// The returned images may include other OS features as well.
+func (idx Index) SelectByPlatform(platform specsv1.Platform) Index {
+	var selected Index
+	for _, img := range idx {
+		if platformMatches(platform, img.Platform) {
+			selected = append(selected, img)
+		}
+	}
+	return selected
+}
+
+func platformMatches(requested, comparand specsv1.Platform) bool {
+	if requested.Architecture != "" && requested.Architecture != comparand.Architecture {
+		return false
+	}
+	if requested.OS != "" && requested.OS != comparand.OS {
+		return false
+	}
+	if requested.OSVersion != "" && requested.OSVersion != comparand.OSVersion {
+		return false
+	}
+	if !featuresMatch(requested.OSFeatures, comparand.OSFeatures) {
+		return false
+	}
+	if requested.Variant != "" && requested.Variant != comparand.Variant {
+		return false
+	}
+	return true
+}
+
+func featuresMatch(requested, comparand []string) bool {
+	comparandSet := make(map[string]bool, len(comparand))
+	for _, cmp := range comparand {
+		comparandSet[cmp] = true
+	}
+	for _, req := range requested {
+		if !comparandSet[req] {
+			return false
+		}
+	}
+	return true
+}
+
+// Image represents a platform specific container image.
 type Image struct {
 	Layers []Layer
 	// Config represents the OCI image configuration for this image.

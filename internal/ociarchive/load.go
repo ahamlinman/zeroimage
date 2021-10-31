@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"reflect"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
@@ -24,86 +25,125 @@ import (
 // The current implementation of LoadArchive buffers all of the archive's blobs
 // in memory, and requires that all blobs referenced by manifests appear in the
 // archive itself.
-func LoadArchive(r io.Reader) (image.Image, error) {
-	var (
-		ll       loadedLayout
-		img      image.Image
-		manifest specsv1.Manifest
-	)
-
-	// In theory we could take some kind of "opener" instead of a reader, and
-	// avoid loading the entire archive into memory like this.
+func LoadArchive(r io.Reader) (image.Index, error) {
+	var ll loadedLayout
 	if err := ll.populateFromTar(tar.NewReader(r)); err != nil {
-		return image.Image{}, fmt.Errorf("invalid archive: %w", err)
+		return nil, fmt.Errorf("invalid archive: %w", err)
 	}
-
 	if ll.Layout == nil || ll.Layout.Version == "" {
-		return image.Image{}, fmt.Errorf("invalid archive: missing or invalid %s", specsv1.ImageLayoutFile)
+		return nil, fmt.Errorf("invalid archive: missing or invalid %s", specsv1.ImageLayoutFile)
 	}
 	if ll.Index == nil {
-		return image.Image{}, errors.New("invalid archive: missing index.json")
+		return nil, errors.New("invalid archive: missing index.json")
 	}
 
-	// In theory we could set up images for all of the manifests in the archive.
-	if len(ll.Index.Manifests) != 1 {
-		return image.Image{}, errors.New("archive must contain exactly 1 manifest")
-	}
-	if ll.Index.Manifests[0].MediaType != specsv1.MediaTypeImageManifest {
-		return image.Image{}, errors.New("unsupported media type for manifest")
-	}
-
-	err := ll.extractJSON(ll.Index.Manifests[0].Digest, &manifest)
+	manifestDescriptors, err := ll.manifestDescriptors()
 	if err != nil {
-		return image.Image{}, fmt.Errorf("reading manifest: %w", err)
+		return nil, fmt.Errorf("invalid index: %w", err)
 	}
 
-	if manifest.Config.MediaType != specsv1.MediaTypeImageConfig {
-		return image.Image{}, errors.New("unsupported media type for image config")
-	}
+	var idx image.Index
+	for _, md := range manifestDescriptors {
+		md := md
 
-	// This is the part where we finally start loading the things we care about
-	// into an image.Image.
-
-	img.Annotations = manifest.Annotations
-	if platform := ll.Index.Manifests[0].Platform; platform != nil {
-		img.Platform = *platform
-	}
-
-	// TODO: May want to update img.Platform based on values in the config if
-	// necessary, including fields not defined in specs-go as of this writing.
-	err = ll.extractJSON(manifest.Config.Digest, &img.Config)
-	if err != nil {
-		return image.Image{}, fmt.Errorf("reading image config: %w", err)
-	}
-
-	if len(img.Config.RootFS.DiffIDs) != len(manifest.Layers) {
-		return image.Image{}, fmt.Errorf("manifest layer count does not match DiffID count")
-	}
-	for i, layerDesc := range manifest.Layers {
-		blob, ok := ll.Blobs[layerDesc.Digest]
-		if !ok {
-			// From the spec: "The blobs directory MAY be missing referenced blobs, in
-			// which case the missing blobs SHOULD be fulfilled by an external blob
-			// store." For the sake of simplicity we're going to let that SHOULD do
-			// some work, at least for now.
-			return image.Image{}, fmt.Errorf("blob %s not found", layerDesc.Digest)
+		platform, err := ll.loadImagePlatform(md)
+		if err != nil {
+			return nil, fmt.Errorf("invalid manifest: %w", err)
 		}
-		img.Layers = append(img.Layers, image.Layer{
-			Descriptor: layerDesc,
-			DiffID:     img.Config.RootFS.DiffIDs[i],
-			Blob: func(_ context.Context) (io.ReadCloser, error) {
-				return io.NopCloser(bytes.NewReader(blob)), nil
+
+		idx = append(idx, image.IndexEntry{
+			Platform: platform,
+			Image: func(_ context.Context) (image.Image, error) {
+				img := image.Image{Platform: platform}
+
+				var manifest specsv1.Manifest
+				if err := ll.extractJSON(md.Digest, &manifest); err != nil {
+					return image.Image{}, err
+				}
+				img.Annotations = manifest.Annotations
+
+				var config specsv1.Image
+				if err := ll.extractJSON(manifest.Config.Digest, &config); err != nil {
+					return image.Image{}, err
+				}
+				img.Config = config
+
+				if len(config.RootFS.DiffIDs) != len(manifest.Layers) {
+					return image.Image{}, errors.New("manifest layer count does not match diff ID count")
+				}
+				for i, layerDesc := range manifest.Layers {
+					blob, ok := ll.Blobs[layerDesc.Digest]
+					if !ok {
+						return image.Image{}, fmt.Errorf("blob %s missing from archive", layerDesc.Digest)
+					}
+					img.Layers = append(img.Layers, image.Layer{
+						Descriptor: layerDesc,
+						DiffID:     config.RootFS.DiffIDs[i],
+						Blob: func(_ context.Context) (io.ReadCloser, error) {
+							return io.NopCloser(bytes.NewReader(blob)), nil
+						},
+					})
+				}
+
+				return img, nil
 			},
 		})
 	}
 
-	return img, nil
+	return idx, nil
 }
 
 type loadedLayout struct {
 	Layout *specsv1.ImageLayout
 	Index  *specsv1.Index
 	Blobs  map[digest.Digest][]byte
+}
+
+func (ll *loadedLayout) loadImagePlatform(manifestDesc specsv1.Descriptor) (specsv1.Platform, error) {
+	if manifestDesc.Platform != nil && !reflect.DeepEqual(*manifestDesc.Platform, specsv1.Platform{}) {
+		return *manifestDesc.Platform, nil
+	}
+
+	var manifest specsv1.Manifest
+	if err := ll.extractJSON(manifestDesc.Digest, &manifest); err != nil {
+		return specsv1.Platform{}, err
+	}
+	var config extendedImage
+	if err := ll.extractJSON(manifest.Config.Digest, &config); err != nil {
+		return specsv1.Platform{}, err
+	}
+
+	return specsv1.Platform{
+		OS:           config.OS,
+		Architecture: config.Architecture,
+		OSVersion:    config.OSVersion,
+		OSFeatures:   config.OSFeatures,
+		Variant:      config.Variant,
+	}, nil
+}
+
+func (ll *loadedLayout) manifestDescriptors() ([]specsv1.Descriptor, error) {
+	indices := []specsv1.Index{*ll.Index}
+	for _, desc := range ll.Index.Manifests {
+		if desc.MediaType != specsv1.MediaTypeImageIndex {
+			continue
+		}
+		var index specsv1.Index
+		if err := ll.extractJSON(desc.Digest, &index); err != nil {
+			return nil, err
+		}
+		indices = append(indices, index)
+	}
+
+	var mds []specsv1.Descriptor
+	for _, idx := range indices {
+		for _, desc := range idx.Manifests {
+			if desc.MediaType == specsv1.MediaTypeImageManifest {
+				mds = append(mds, desc)
+			}
+		}
+	}
+	return mds, nil
 }
 
 func (ll *loadedLayout) extractJSON(dgst digest.Digest, v interface{}) error {
@@ -126,7 +166,7 @@ func (ll *loadedLayout) populateFromTar(tr *tar.Reader) error {
 
 		switch {
 		case strings.HasPrefix(header.Name, "blobs/") && header.Typeflag == tar.TypeReg:
-			err = ll.addBlob(header.Name, tr)
+			err = ll.populateBlob(header.Name, tr)
 		case header.Name == "index.json":
 			err = json.NewDecoder(tr).Decode(&ll.Index)
 		case header.Name == specsv1.ImageLayoutFile:
@@ -141,7 +181,7 @@ func (ll *loadedLayout) populateFromTar(tr *tar.Reader) error {
 	}
 }
 
-func (ll *loadedLayout) addBlob(name string, r io.Reader) error {
+func (ll *loadedLayout) populateBlob(name string, r io.Reader) error {
 	pathAlg := path.Base(path.Dir(name))
 	pathDigest := path.Base(name)
 	dgst := digest.NewDigestFromEncoded(digest.Algorithm(pathAlg), pathDigest)
