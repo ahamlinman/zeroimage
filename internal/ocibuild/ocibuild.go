@@ -3,6 +3,7 @@ package ocibuild
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"hash"
 	"io"
@@ -25,7 +26,7 @@ type Image struct {
 type Layer struct {
 	Descriptor specsv1.Descriptor
 	DiffID     digest.Digest
-	Blob       []byte
+	Blob       func(context.Context) (io.ReadCloser, error)
 }
 
 // LayerBuilder provides an interface to create a new filesystem layer in an
@@ -63,12 +64,14 @@ func (lb *LayerBuilder) Close() error {
 	}
 
 	layer := Layer{
-		Blob:   lb.buf.Bytes(),
-		DiffID: digest.NewDigest(digest.Canonical, lb.tarHash),
 		Descriptor: specsv1.Descriptor{
 			MediaType: specsv1.MediaTypeImageLayerGzip,
 			Digest:    digest.NewDigest(digest.Canonical, lb.gzipHash),
 			Size:      int64(lb.buf.Len()),
+		},
+		DiffID: digest.NewDigest(digest.Canonical, lb.tarHash),
+		Blob: func(_ context.Context) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(lb.buf.Bytes())), nil
 		},
 	}
 
@@ -99,7 +102,14 @@ type imageWriter struct {
 
 func (iw *imageWriter) WriteArchive() error {
 	for _, layer := range iw.image.Layers {
-		iw.addBlob(layer.Descriptor.Digest, layer.Blob)
+		blob, err := layer.Blob(context.TODO())
+		if err != nil {
+			return err
+		}
+		err = iw.addBlob(layer.Descriptor, blob)
+		if err != nil {
+			return err
+		}
 	}
 
 	config := iw.image.Config // shallow copy
@@ -127,9 +137,19 @@ func (iw *imageWriter) WriteArchive() error {
 	return iw.tar.Close()
 }
 
-func (iw *imageWriter) addBlob(digest digest.Digest, blob []byte) {
+func (iw *imageWriter) addBlob(desc specsv1.Descriptor, blob io.Reader) error {
+	digest := desc.Digest
 	path := "blobs/" + string(digest.Algorithm()) + "/" + digest.Encoded()
-	iw.tar.AddContent(path, blob)
+	return iw.tar.Add(path, tarbuild.File{
+		Reader: blob,
+		Mode:   0644,
+		Size:   desc.Size,
+	})
+}
+
+func (iw *imageWriter) addBlobContent(digest digest.Digest, content []byte) {
+	path := "blobs/" + string(digest.Algorithm()) + "/" + digest.Encoded()
+	iw.tar.AddContent(path, content)
 }
 
 func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) specsv1.Descriptor {
@@ -139,7 +159,7 @@ func (iw *imageWriter) addJSONBlob(mediaType string, v interface{}) specsv1.Desc
 		Digest:    digest.FromBytes(encoded),
 		Size:      int64(len(encoded)),
 	}
-	iw.addBlob(desc.Digest, encoded)
+	iw.addBlobContent(desc.Digest, encoded)
 	return desc
 }
 

@@ -3,6 +3,7 @@ package ocibuild
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,7 +87,9 @@ func LoadArchive(r io.Reader) (*Image, error) {
 		img.Layers = append(img.Layers, Layer{
 			Descriptor: layerDesc,
 			DiffID:     img.Config.RootFS.DiffIDs[i],
-			Blob:       blob,
+			Blob: func(_ context.Context) (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(blob)), nil
+			},
 		})
 	}
 
