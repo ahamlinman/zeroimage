@@ -36,9 +36,9 @@ var (
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
-	buildCmd.Flags().StringVar(&buildFrom, "from", "", "Use an existing image from a registry as a base")
-	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
-	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
+	buildCmd.Flags().StringVar(&buildFrom, "from", "", "Use an image from a remote registry as a base")
+	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an OCI image archive as a base")
+	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write an OCI image archive to this path (default [ENTRYPOINT].tar)")
 	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
 	buildCmd.Flags().StringVar(&buildTargetOS, "target-os", runtime.GOOS, "Set the target OS of the image")
 
