@@ -19,7 +19,7 @@ type Index []IndexEntry
 // an OCI image index.
 type IndexEntry struct {
 	Platform specsv1.Platform
-	Image    func(context.Context) (Image, error)
+	GetImage func(context.Context) (Image, error)
 }
 
 // SelectByPlatform returns a new Index of the images in idx where all non empty
@@ -70,7 +70,7 @@ type Image struct {
 type Layer struct {
 	Descriptor specsv1.Descriptor
 	DiffID     digest.Digest
-	Blob       func(context.Context) (io.ReadCloser, error)
+	OpenBlob   func(context.Context) (io.ReadCloser, error)
 }
 
 // AppendLayer appends layer to img.Layers and updates corresponding values of

@@ -78,7 +78,7 @@ func runBuild(_ *cobra.Command, args []string) {
 				image.FormatPlatform(targetPlatform),
 			)
 		}
-		img, err = platformIndex[0].Image(context.Background())
+		img, err = platformIndex[0].GetImage(context.Background())
 		if err != nil {
 			log.Fatal("Unable to load base image: ", err)
 		}

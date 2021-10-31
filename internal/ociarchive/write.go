@@ -30,7 +30,7 @@ type imageWriter struct {
 
 func (iw *imageWriter) WriteArchive() error {
 	for _, layer := range iw.image.Layers {
-		blob, err := layer.Blob(context.TODO())
+		blob, err := layer.OpenBlob(context.TODO())
 		if err != nil {
 			return err
 		}

@@ -53,7 +53,7 @@ func LoadArchive(r io.Reader) (image.Index, error) {
 
 		idx = append(idx, image.IndexEntry{
 			Platform: platform,
-			Image: func(_ context.Context) (image.Image, error) {
+			GetImage: func(_ context.Context) (image.Image, error) {
 				img := image.Image{Platform: platform}
 
 				var manifest specsv1.Manifest
@@ -79,7 +79,7 @@ func LoadArchive(r io.Reader) (image.Index, error) {
 					img.Layers = append(img.Layers, image.Layer{
 						Descriptor: layerDesc,
 						DiffID:     config.RootFS.DiffIDs[i],
-						Blob: func(_ context.Context) (io.ReadCloser, error) {
+						OpenBlob: func(_ context.Context) (io.ReadCloser, error) {
 							return io.NopCloser(bytes.NewReader(blob)), nil
 						},
 					})
