@@ -53,9 +53,7 @@ func runBuild(_ *cobra.Command, args []string) {
 	var img image.Image
 	if buildFromArchive == "" {
 		log.Println("Building image from scratch")
-		img = image.Image{
-			Config: specsv1.Image{OS: buildTargetOS, Architecture: buildTargetArch},
-		}
+		img.SetPlatform(specsv1.Platform{OS: buildTargetOS, Architecture: buildTargetArch})
 	} else {
 		log.Printf("Loading base image: %s", buildFromArchive)
 		base, err := os.Open(buildFromArchive)

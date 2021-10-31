@@ -40,19 +40,35 @@ func (iw *imageWriter) WriteArchive() error {
 		}
 	}
 
+	// As of this writing, there are a few fields defined by the OCI image
+	// configuration spec that the associated Go type does not yet implement.
+	imageConfig := struct {
+		specsv1.Image
+		OSVersion  string   `json:"os.version,omitempty"`
+		OSFeatures []string `json:"os.features,omitempty"`
+		Variant    string   `json:"variant,omitempty"`
+	}{
+		Image:      iw.image.Config,
+		OSVersion:  iw.image.Platform.OSVersion,
+		OSFeatures: iw.image.Platform.OSFeatures,
+		Variant:    iw.image.Platform.Variant,
+	}
+
 	manifest := specsv1.Manifest{
-		Versioned: specs.Versioned{SchemaVersion: 2},
-		Config:    iw.addJSONBlob(specsv1.MediaTypeImageConfig, iw.image.Config),
+		Versioned:   specs.Versioned{SchemaVersion: 2},
+		Config:      iw.addJSONBlob(specsv1.MediaTypeImageConfig, imageConfig),
+		Annotations: iw.image.Annotations,
 	}
 	for _, layer := range iw.image.Layers {
 		manifest.Layers = append(manifest.Layers, layer.Descriptor)
 	}
 
+	manifestDesc := iw.addJSONBlob(specsv1.MediaTypeImageManifest, manifest)
+	manifestDesc.Platform = &iw.image.Platform
+
 	iw.addJSONFile("index.json", specsv1.Index{
 		Versioned: specs.Versioned{SchemaVersion: 2},
-		Manifests: []specsv1.Descriptor{
-			iw.addJSONBlob(specsv1.MediaTypeImageManifest, manifest),
-		},
+		Manifests: []specsv1.Descriptor{manifestDesc},
 	})
 
 	iw.addJSONFile(specsv1.ImageLayoutFile, specsv1.ImageLayout{

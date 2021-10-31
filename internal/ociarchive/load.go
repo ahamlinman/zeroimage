@@ -64,6 +64,13 @@ func LoadArchive(r io.Reader) (image.Image, error) {
 	// This is the part where we finally start loading the things we care about
 	// into an image.Image.
 
+	img.Annotations = manifest.Annotations
+	if platform := ll.Index.Manifests[0].Platform; platform != nil {
+		img.Platform = *platform
+	}
+
+	// TODO: May want to update img.Platform based on values in the config if
+	// necessary, including fields not defined in specs-go as of this writing.
 	err = ll.extractJSON(manifest.Config.Digest, &img.Config)
 	if err != nil {
 		return image.Image{}, fmt.Errorf("reading image config: %w", err)
@@ -77,8 +84,8 @@ func LoadArchive(r io.Reader) (image.Image, error) {
 		if !ok {
 			// From the spec: "The blobs directory MAY be missing referenced blobs, in
 			// which case the missing blobs SHOULD be fulfilled by an external blob
-			// store." For our purposes, it should not be a big deal to ignore the
-			// part about external blob stores.
+			// store." For the sake of simplicity we're going to let that SHOULD do
+			// some work, at least for now.
 			return image.Image{}, fmt.Errorf("blob %s not found", layerDesc.Digest)
 		}
 		img.Layers = append(img.Layers, image.Layer{
