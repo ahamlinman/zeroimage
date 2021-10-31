@@ -37,9 +37,8 @@ type FileInfo struct {
 	File
 }
 
-// Name returns the empty string. The tarbuild package ignores this field when
-// adding a file to an archive, as the user is expected to provide a full
-// destination path rather than a basename alone.
+// Name returns the empty string. Builder ignores this field when adding a file
+// to an archive, as it adds each entry at an explicit destination path.
 func (fi FileInfo) Name() string {
 	return ""
 }
@@ -95,15 +94,15 @@ func (Dir) Close() error {
 	return nil
 }
 
-// FileInfo is the underlying type of the fs.FileInfo returned by the Stat
-// method of a File.
+// DirInfo is the underlying type of the fs.FileInfo returned by the Stat method
+// of a Dir.
 type DirInfo struct {
 	Dir
 }
 
-// Name returns the empty string. The tarbuild package ignores this field when
-// adding a directory to an archive, as the user is expected to provide a full
-// destination path rather than a basename alone.
+// Name returns the empty string. Builder ignores this field when adding a
+// directory to an archive, as it adds each entry at an explicit destination
+// path.
 func (di DirInfo) Name() string {
 	return ""
 }

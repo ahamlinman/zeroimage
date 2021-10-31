@@ -95,19 +95,19 @@ func (b *Builder) AddContent(path string, content []byte) error {
 }
 
 // Add adds the provided file to the archive at the provided path, creating any
-// necessary parent directories as described by Builder. Add preserves the
-// original size, mode, and modification time reported by file.Stat, and may
-// preserve some fields of file.Stat.Sys, but does not preserve the original
-// name, owner, or group.
+// necessary parent directories as described by Builder. Add preserves the size,
+// mode, and modification time reported by file.Stat, and may preserve some
+// fields of file.Stat.Sys, but does not preserve the original name, owner, or
+// group of the file.
 //
-// When file represents a regular file, Add will immediately copy its contents
-// into the archive.
+// When file represents a regular file, Add immediately copies its contents into
+// the archive.
 //
-// When file represents a directory, Add will create an entry for an empty
-// directory using the fields of file.Stat as defined above, without regard to
-// the contents of the directory. To add a directory of files to an archive
-// while preserving Stat fields, first add the directory, then add each file
-// that it contains.
+// When file represents a directory, Add creates an entry for an empty directory
+// using the fields of file.Stat as defined above, without regard to the
+// contents of the directory. To add a directory of files to an archive while
+// preserving Stat fields, first add the directory, then add each file that it
+// contains.
 func (b *Builder) Add(path string, file fs.File) (err error) {
 	if b.err != nil {
 		return b.err
