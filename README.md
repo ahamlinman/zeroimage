@@ -1,13 +1,13 @@
 # zeroimage
 
 ```sh
-zeroimage build some-program
+zeroimage build --from gcr.io/distroless/static:latest some-program
 ```
 
 …is like building the following Dockerfile:
 
 ```dockerfile
-FROM scratch
+FROM gcr.io/distroless/static:latest
 COPY some-program /some-program
 ENTRYPOINT ["/some-program"]
 ```
@@ -33,39 +33,52 @@ runtime.
 
 ## Usage
 
-zeroimage produces and consumes `.tar` archives whose contents comply with the
-[OCI Image Format Specification][oci].
+zeroimage currently only produces `.tar` archives whose contents comply with the
+[OCI Image Format Specification][oci]. Not all container tools support OCI image
+archives! Docker in particular uses a proprietary `.tar` layout that is not
+OCI-compatible. You will probably use zeroimage alongside a tool like
+[Skopeo][skopeo] to push and pull OCI image archives to and from registries, or
+to load images into a container runtime.
 
-Not all container tools support OCI image archives! Most notably, Docker uses a
-proprietary `.tar` layout that is not OCI-compatible. You will probably use
-zeroimage alongside a tool like [Skopeo][skopeo] to push and pull OCI image
-archives to and from registries, or to load images into a container runtime.
+zeroimage can consume base images from OCI image archives, or from a remote
+registry. zeroimage will automatically authenticate to private registries using
+your Docker login credentials if necessary (the same credentials managed by
+`docker login`).
 
 **Example:** Publish an image with a [distroless][distroless] base layer, which
 contains a basic Linux system layout but no shell or package manager:
 
 ```sh
-# Download the base image into an OCI image archive with Skopeo.
-skopeo copy docker://gcr.io/distroless/static:latest oci-archive:distroless-base.tar
-
 # Build a new OCI image archive using the base image and your entrypoint. By
 # default zeroimage will name the output file "some-program.tar", based on the
 # entrypoint name.
-zeroimage -base distroless-base.tar some-program
+zeroimage --from gcr.io/distroless/static:latest some-program
 
 # Publish the new image to your own registry.
 skopeo copy oci-archive:some-program.tar docker://registry.example.com/some-program:latest
 ```
 
+**Example:** Extend a base image stored in a tar archive on disk:
+
+```sh
+# Download the base image into an OCI image archive with Skopeo.
+skopeo copy docker://alpine:latest oci-archive:alpine.tar
+
+# Build a new OCI image archive using the base image and your entrypoint. By
+# default zeroimage will name the output file "some-program.tar", based on the
+# entrypoint name.
+zeroimage build --from-archive distroless-base.tar some-program
+```
+
 **Example:** Build a `FROM scratch`-style image and load it into Docker:
 
 ```sh
-# Without a -base, zeroimage will produce a "FROM scratch"-style image that
+# Without a base image, zeroimage will produce a "FROM scratch"-style image that
 # literally just contains the entrypoint binary.
-zeroimage some-program
+zeroimage build some-program
 
 # Since "docker load" does not support OCI image archives, use Skopeo to load
-# the image into a Docker daemon.
+# the image into a Docker daemon for testing.
 skopeo copy oci-archive:some-program.tar docker-daemon:registry.example.com/some-program:latest
 ```
 
@@ -95,8 +108,8 @@ Other notable caveats include, but are not limited to:
 
 ## Future Work
 
-- Include built in OCI registry support, to reduce the heavy dependency on
-  external tools like Skopeo.
+- Include built in support for pushing to OCI registries, to reduce the heavy
+  dependency on external tools like Skopeo.
 - Instead of building `FROM scratch` by default, provide a built-in minimal base
   that removes some of the caveats noted above. For example, automatically
   bundle a standard `/etc/passwd` and a known set of TLS roots by default.
