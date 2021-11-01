@@ -52,6 +52,10 @@ func (ll loadedLayout) OpenRootManifest(_ context.Context) (io.ReadCloser, error
 	return io.NopCloser(bytes.NewReader(index)), nil
 }
 
+func (ll loadedLayout) OpenManifest(ctx context.Context, dgst digest.Digest) (io.ReadCloser, error) {
+	return ll.OpenBlob(ctx, dgst)
+}
+
 func (ll loadedLayout) OpenBlob(_ context.Context, dgst digest.Digest) (io.ReadCloser, error) {
 	blob, ok := ll.Blobs[dgst]
 	if !ok {

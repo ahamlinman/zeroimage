@@ -16,15 +16,28 @@ import (
 // compatible with the listed OCI definitions, in terms of the JSON schema and
 // semantics of the values, at least for the most important fields.
 var (
-	supportedIndexMediaTypes = map[string]bool{
-		specsv1.MediaTypeImageIndex:                                 true,
-		"application/vnd.docker.distribution.manifest.list.v2+json": true,
+	SupportedIndexMediaTypes = []string{
+		specsv1.MediaTypeImageIndex,
+		"application/vnd.docker.distribution.manifest.list.v2+json",
 	}
-	supportedManifestMediaTypes = map[string]bool{
-		specsv1.MediaTypeImageManifest:                         true,
-		"application/vnd.docker.distribution.manifest.v2+json": true,
+	SupportedManifestMediaTypes = []string{
+		specsv1.MediaTypeImageManifest,
+		"application/vnd.docker.distribution.manifest.v2+json",
 	}
 )
+
+var (
+	supportedIndexMediaTypes    = toStringSet(SupportedIndexMediaTypes)
+	supportedManifestMediaTypes = toStringSet(SupportedManifestMediaTypes)
+)
+
+func toStringSet(ss []string) map[string]bool {
+	set := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		set[s] = true
+	}
+	return set
+}
 
 // Loader represents a source of manifest and blob information for container
 // images.
@@ -33,6 +46,10 @@ type Loader interface {
 	// which may be an OCI image index, Docker v2 manifest list, OCI image
 	// manifest, or Docker v2 image manifest.
 	OpenRootManifest(context.Context) (io.ReadCloser, error)
+	// OpenManifest returns a reader for a JSON-encoded manifest, which may be an
+	// OCI image index, Docker v2 manifest list, OCI image manifest, or Docker v2
+	// image manifest.
+	OpenManifest(context.Context, digest.Digest) (io.ReadCloser, error)
 	// OpenBlob returns a reader for a blob whose content matches the provided
 	// digest.
 	OpenBlob(context.Context, digest.Digest) (io.ReadCloser, error)
@@ -209,7 +226,7 @@ func (l *loader) getNestedIndex(ctx context.Context, dgst digest.Digest) (specsv
 	}
 
 	var nested specsv1.Index
-	err := l.readJSONBlob(ctx, dgst, &nested)
+	err := l.readJSONManifest(ctx, dgst, &nested)
 	if err != nil {
 		return specsv1.Index{}, err
 	}
@@ -251,7 +268,7 @@ func (l *loader) getManifest(ctx context.Context, dgst digest.Digest) (specsv1.M
 	}
 
 	var manifest specsv1.Manifest
-	err := l.readJSONBlob(ctx, dgst, &manifest)
+	err := l.readJSONManifest(ctx, dgst, &manifest)
 	if err != nil {
 		return specsv1.Manifest{}, err
 	}
@@ -279,6 +296,15 @@ func (l *loader) getConfig(ctx context.Context, dgst digest.Digest) (Config, err
 	}
 	l.configs[dgst] = config
 	return config, nil
+}
+
+func (l *loader) readJSONManifest(ctx context.Context, dgst digest.Digest, v interface{}) error {
+	rdr, err := l.OpenManifest(ctx, dgst)
+	if err != nil {
+		return err
+	}
+	defer rdr.Close()
+	return json.NewDecoder(rdr).Decode(v)
 }
 
 func (l *loader) readJSONBlob(ctx context.Context, dgst digest.Digest, v interface{}) error {

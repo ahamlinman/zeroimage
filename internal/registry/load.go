@@ -2,18 +2,17 @@ package registry
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/opencontainers/go-digest"
-	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"go.alexhamlin.co/zeroimage/internal/image"
 )
@@ -32,20 +31,23 @@ func Load(ctx context.Context, reference string) (image.Index, error) {
 		name.Context().Registry,
 		authenticator,
 		http.DefaultTransport,
-		[]string{transport.PullScope},
+		[]string{name.Scope(transport.PullScope)},
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return image.Load(ctx, loader{
-		RoundTripper: transport,
-		Name:         name,
+		Client: http.Client{
+			Transport: transport,
+			Timeout:   10 * time.Second,
+		},
+		Name: name,
 	})
 }
 
 type loader struct {
-	http.RoundTripper
+	http.Client
 	Name name.Reference
 }
 
@@ -56,10 +58,35 @@ func (l loader) OpenRootManifest(ctx context.Context) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	accept := []string{specsv1.MediaTypeImageIndex, specsv1.MediaTypeImageManifest}
+	var accept []string
+	accept = append(accept, image.SupportedIndexMediaTypes...)
+	accept = append(accept, image.SupportedManifestMediaTypes...)
 	req.Header.Set("Accept", strings.Join(accept, ","))
 
-	resp, err := l.RoundTrip(req)
+	resp, err := l.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if err := transport.CheckError(resp, http.StatusOK); err != nil {
+		return nil, err
+	}
+
+	return resp.Body, nil
+}
+
+func (l loader) OpenManifest(ctx context.Context, dgst digest.Digest) (io.ReadCloser, error) {
+	manifestURL := l.formatURL("/v2/%s/manifests/%s", l.Name.Context().RepositoryStr(), dgst)
+	req, err := http.NewRequest(http.MethodGet, manifestURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var accept []string
+	accept = append(accept, image.SupportedIndexMediaTypes...)
+	accept = append(accept, image.SupportedManifestMediaTypes...)
+	req.Header.Set("Accept", strings.Join(accept, ","))
+
+	resp, err := l.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +98,21 @@ func (l loader) OpenRootManifest(ctx context.Context) (io.ReadCloser, error) {
 }
 
 func (l loader) OpenBlob(ctx context.Context, dgst digest.Digest) (io.ReadCloser, error) {
-	return nil, errors.New("not implemented")
+	blobURL := l.formatURL("/v2/%s/blobs/%s", l.Name.Context().RepositoryStr(), dgst)
+	req, err := http.NewRequest(http.MethodGet, blobURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := l.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if err := transport.CheckError(resp, http.StatusOK); err != nil {
+		return nil, err
+	}
+
+	return resp.Body, nil
 }
 
 func (l loader) formatURL(format string, a ...interface{}) url.URL {
