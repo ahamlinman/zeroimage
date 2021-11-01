@@ -62,13 +62,11 @@ func LoadArchive(r io.Reader) (image.Index, error) {
 				}
 				img.Annotations = manifest.Annotations
 
-				var config specsv1.Image
-				if err := ll.extractJSON(manifest.Config.Digest, &config); err != nil {
+				if err := ll.extractJSON(manifest.Config.Digest, &img.Config); err != nil {
 					return image.Image{}, err
 				}
-				img.Config = config
 
-				if len(config.RootFS.DiffIDs) != len(manifest.Layers) {
+				if len(img.Config.RootFS.DiffIDs) != len(manifest.Layers) {
 					return image.Image{}, errors.New("manifest layer count does not match diff ID count")
 				}
 				for i, layerDesc := range manifest.Layers {
@@ -78,7 +76,7 @@ func LoadArchive(r io.Reader) (image.Index, error) {
 					}
 					img.Layers = append(img.Layers, image.Layer{
 						Descriptor: layerDesc,
-						DiffID:     config.RootFS.DiffIDs[i],
+						DiffID:     img.Config.RootFS.DiffIDs[i],
 						OpenBlob: func(_ context.Context) (io.ReadCloser, error) {
 							return io.NopCloser(bytes.NewReader(blob)), nil
 						},
@@ -108,7 +106,7 @@ func (ll *loadedLayout) loadImagePlatform(manifestDesc specsv1.Descriptor) (spec
 	if err := ll.extractJSON(manifestDesc.Digest, &manifest); err != nil {
 		return specsv1.Platform{}, err
 	}
-	var config extendedImage
+	var config image.Config
 	if err := ll.extractJSON(manifest.Config.Digest, &config); err != nil {
 		return specsv1.Platform{}, err
 	}

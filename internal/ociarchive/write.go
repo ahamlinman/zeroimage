@@ -40,15 +40,9 @@ func (iw *imageWriter) WriteArchive() error {
 		}
 	}
 
-	imageConfig := extendedImage{
-		Image:      iw.image.Config,
-		OSVersion:  iw.image.Platform.OSVersion,
-		OSFeatures: iw.image.Platform.OSFeatures,
-		Variant:    iw.image.Platform.Variant,
-	}
 	manifest := specsv1.Manifest{
 		Versioned:   specs.Versioned{SchemaVersion: 2},
-		Config:      iw.addJSONBlob(specsv1.MediaTypeImageConfig, imageConfig),
+		Config:      iw.addJSONBlob(specsv1.MediaTypeImageConfig, iw.image.Config),
 		Annotations: iw.image.Annotations,
 	}
 	for _, layer := range iw.image.Layers {

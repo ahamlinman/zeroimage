@@ -57,13 +57,23 @@ func (idx Index) SelectByPlatform(platform specsv1.Platform) Index {
 type Image struct {
 	Layers []Layer
 	// Config represents the OCI image configuration for this image.
-	Config specsv1.Image
+	Config Config
 	// Platform represents the "platform" value for this image in the "manifests"
 	// array of an OCI image index.
 	Platform specsv1.Platform
 	// Annotations represents the "annotations" value for the OCI image manifest
 	// associated with this image.
 	Annotations map[string]string
+}
+
+// Config represents an OCI image configuration structure, extended with
+// properties defined by the spec but not implemented in the upstream Go type as
+// of this writing.
+type Config struct {
+	specsv1.Image
+	OSVersion  string   `json:"os.version,omitempty"`
+	OSFeatures []string `json:"os.features,omitempty"`
+	Variant    string   `json:"variant,omitempty"`
 }
 
 // Layer represents a single filesystem layer in a container image.
