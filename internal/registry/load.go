@@ -47,78 +47,57 @@ func Load(ctx context.Context, reference string) (image.Index, error) {
 }
 
 type loader struct {
-	http.Client
-	Name name.Reference
+	Client http.Client
+	Name   name.Reference
 }
 
 func (l loader) OpenRootManifest(ctx context.Context) (io.ReadCloser, error) {
-	manifestURL := l.formatURL("/v2/%s/manifests/%s", l.Name.Context().RepositoryStr(), l.Name.Identifier())
-	req, err := http.NewRequest(http.MethodGet, manifestURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var accept []string
-	accept = append(accept, image.SupportedIndexMediaTypes...)
-	accept = append(accept, image.SupportedManifestMediaTypes...)
-	req.Header.Set("Accept", strings.Join(accept, ","))
-
-	resp, err := l.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if err := transport.CheckError(resp, http.StatusOK); err != nil {
-		return nil, err
-	}
-
-	return resp.Body, nil
+	req := l.newGetRequest(ctx, "manifests", l.Name.Identifier())
+	req.Header.Set("Accept", strings.Join(acceptedManifestTypes, ","))
+	return l.doRequest(req)
 }
 
 func (l loader) OpenManifest(ctx context.Context, dgst digest.Digest) (io.ReadCloser, error) {
-	manifestURL := l.formatURL("/v2/%s/manifests/%s", l.Name.Context().RepositoryStr(), dgst)
-	req, err := http.NewRequest(http.MethodGet, manifestURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var accept []string
-	accept = append(accept, image.SupportedIndexMediaTypes...)
-	accept = append(accept, image.SupportedManifestMediaTypes...)
-	req.Header.Set("Accept", strings.Join(accept, ","))
-
-	resp, err := l.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if err := transport.CheckError(resp, http.StatusOK); err != nil {
-		return nil, err
-	}
-
-	return resp.Body, nil
+	req := l.newGetRequest(ctx, "manifests", dgst.String())
+	req.Header.Set("Accept", strings.Join(acceptedManifestTypes, ","))
+	return l.doRequest(req)
 }
 
 func (l loader) OpenBlob(ctx context.Context, dgst digest.Digest) (io.ReadCloser, error) {
-	blobURL := l.formatURL("/v2/%s/blobs/%s", l.Name.Context().RepositoryStr(), dgst)
-	req, err := http.NewRequest(http.MethodGet, blobURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
+	return l.doRequest(l.newGetRequest(ctx, "blobs", dgst.String()))
+}
 
-	resp, err := l.Do(req)
+var acceptedManifestTypes []string
+
+func init() {
+	acceptedManifestTypes = append(acceptedManifestTypes, image.SupportedIndexMediaTypes...)
+	acceptedManifestTypes = append(acceptedManifestTypes, image.SupportedManifestMediaTypes...)
+}
+
+func (l loader) newGetRequest(ctx context.Context, kind, identifer string) *http.Request {
+	url := l.formatURL(kind, identifer)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url.String(), nil)
+	if err != nil {
+		panic(err)
+	}
+	return req
+}
+
+func (l loader) formatURL(kind, identifier string) url.URL {
+	return url.URL{
+		Scheme: l.Name.Context().Registry.Scheme(),
+		Host:   l.Name.Context().RegistryStr(),
+		Path:   fmt.Sprintf("/v2/%s/%s/%s", l.Name.Context().RepositoryStr(), kind, identifier),
+	}
+}
+
+func (l loader) doRequest(req *http.Request) (io.ReadCloser, error) {
+	resp, err := l.Client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if err := transport.CheckError(resp, http.StatusOK); err != nil {
 		return nil, err
 	}
-
 	return resp.Body, nil
-}
-
-func (l loader) formatURL(format string, a ...interface{}) url.URL {
-	return url.URL{
-		Scheme: l.Name.Context().Registry.Scheme(),
-		Host:   l.Name.Context().RegistryStr(),
-		Path:   fmt.Sprintf(format, a...),
-	}
 }
