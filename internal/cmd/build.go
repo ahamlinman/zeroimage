@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"go.alexhamlin.co/zeroimage/internal/image"
 	"go.alexhamlin.co/zeroimage/internal/ociarchive"
+	"go.alexhamlin.co/zeroimage/internal/registry"
 	"go.alexhamlin.co/zeroimage/internal/tarlayer"
 )
 
@@ -26,6 +28,7 @@ var buildCmd = &cobra.Command{
 var defaultPlatform = runtime.GOOS + "/" + runtime.GOARCH
 
 var (
+	buildFrom        string
 	buildFromArchive string
 	buildOutput      string
 	buildPlatform    string
@@ -34,6 +37,7 @@ var (
 func init() {
 	rootCmd.AddCommand(buildCmd)
 
+	buildCmd.Flags().StringVar(&buildFrom, "from", "", "Use an image from a remote registry as a base")
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
 	buildCmd.Flags().StringVar(&buildPlatform, "platform", defaultPlatform, "Select the desired platform for the image")
@@ -51,37 +55,14 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
-	targetPlatform, err := image.ParsePlatform(buildPlatform)
+	platform, err := image.ParsePlatform(buildPlatform)
 	if err != nil {
 		log.Fatal("Could not parse target platform: ", err)
 	}
 
-	var img image.Image
-	if buildFromArchive == "" {
-		log.Println("Building image from scratch")
-		img.SetPlatform(targetPlatform)
-	} else {
-		log.Printf("Loading base image: %s", buildFromArchive)
-		base, err := os.Open(buildFromArchive)
-		if err != nil {
-			log.Fatal("Unable to load base archive: ", err)
-		}
-		index, err := ociarchive.LoadArchive(base)
-		if err != nil {
-			log.Fatal("Unable to load base archive: ", err)
-		}
-		base.Close()
-		platformIndex := index.SelectByPlatform(targetPlatform)
-		if len(platformIndex) != 1 {
-			log.Fatalf(
-				"Could not find a single base image matching the %s platform",
-				image.FormatPlatform(targetPlatform),
-			)
-		}
-		img, err = platformIndex[0].GetImage(context.Background())
-		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
-		}
+	img, err := loadBaseImage(platform)
+	if err != nil {
+		log.Fatal("Unable to load base image: ", err)
 	}
 
 	log.Printf("Adding entrypoint: %s", entrypointTargetPath)
@@ -123,4 +104,52 @@ func runBuild(_ *cobra.Command, args []string) {
 func now() *time.Time {
 	now := time.Now().UTC()
 	return &now
+}
+
+func loadBaseImage(platform specsv1.Platform) (image.Image, error) {
+	if buildFromArchive == "" && buildFrom == "" {
+		var img image.Image
+		img.SetPlatform(platform)
+		return img, nil
+	}
+
+	var (
+		index image.Index
+		err   error
+	)
+	if buildFromArchive != "" {
+		index, err = loadBaseFromArchive()
+	}
+	if buildFrom != "" {
+		index, err = loadBaseFromRegistry()
+	}
+	if err != nil {
+		return image.Image{}, err
+	}
+
+	index = index.SelectByPlatform(platform)
+	if len(index) != 1 {
+		return image.Image{}, fmt.Errorf(
+			"could not find a single base image matching platform %s",
+			image.FormatPlatform(platform),
+		)
+	}
+	return index[0].GetImage(context.TODO())
+}
+
+func loadBaseFromArchive() (image.Index, error) {
+	log.Printf("Loading base image archive: %s", buildFromArchive)
+
+	base, err := os.Open(buildFromArchive)
+	if err != nil {
+		log.Fatal("Unable to load base archive: ", err)
+	}
+	defer base.Close()
+
+	return ociarchive.LoadArchive(base)
+}
+
+func loadBaseFromRegistry() (image.Index, error) {
+	log.Printf("Loading base image from registry: %s", buildFrom)
+	return registry.Load(context.TODO(), buildFrom)
 }
