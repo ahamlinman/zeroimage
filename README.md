@@ -52,7 +52,7 @@ contains a basic Linux system layout but no shell or package manager:
 # Build a new OCI image archive using the base image and your entrypoint. By
 # default zeroimage will name the output file "some-program.tar", based on the
 # entrypoint name.
-zeroimage --from gcr.io/distroless/static:latest some-program
+zeroimage build --from gcr.io/distroless/static:latest some-program
 
 # Publish the new image to your own registry.
 skopeo copy oci-archive:some-program.tar docker://registry.example.com/some-program:latest
