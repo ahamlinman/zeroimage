@@ -24,80 +24,18 @@ import (
 // The current implementation of LoadArchive buffers all of the archive's blobs
 // in memory, and requires that all blobs referenced by manifests appear in the
 // archive itself.
-func LoadArchive(r io.Reader) (image.Image, error) {
-	var (
-		ll       loadedLayout
-		img      image.Image
-		manifest specsv1.Manifest
-	)
-
-	// In theory we could take some kind of "opener" instead of a reader, and
-	// avoid loading the entire archive into memory like this.
+func LoadArchive(r io.Reader) (image.Index, error) {
+	var ll loadedLayout
 	if err := ll.populateFromTar(tar.NewReader(r)); err != nil {
-		return image.Image{}, fmt.Errorf("invalid archive: %w", err)
+		return nil, fmt.Errorf("invalid archive: %w", err)
 	}
-
 	if ll.Layout == nil || ll.Layout.Version == "" {
-		return image.Image{}, fmt.Errorf("invalid archive: missing or invalid %s", specsv1.ImageLayoutFile)
+		return nil, fmt.Errorf("invalid archive: missing or invalid %s", specsv1.ImageLayoutFile)
 	}
 	if ll.Index == nil {
-		return image.Image{}, errors.New("invalid archive: missing index.json")
+		return nil, errors.New("invalid archive: missing index.json")
 	}
-
-	// In theory we could set up images for all of the manifests in the archive.
-	if len(ll.Index.Manifests) != 1 {
-		return image.Image{}, errors.New("archive must contain exactly 1 manifest")
-	}
-	if ll.Index.Manifests[0].MediaType != specsv1.MediaTypeImageManifest {
-		return image.Image{}, errors.New("unsupported media type for manifest")
-	}
-
-	err := ll.extractJSON(ll.Index.Manifests[0].Digest, &manifest)
-	if err != nil {
-		return image.Image{}, fmt.Errorf("reading manifest: %w", err)
-	}
-
-	if manifest.Config.MediaType != specsv1.MediaTypeImageConfig {
-		return image.Image{}, errors.New("unsupported media type for image config")
-	}
-
-	// This is the part where we finally start loading the things we care about
-	// into an image.Image.
-
-	img.Annotations = manifest.Annotations
-	if platform := ll.Index.Manifests[0].Platform; platform != nil {
-		img.Platform = *platform
-	}
-
-	// TODO: May want to update img.Platform based on values in the config if
-	// necessary, including fields not defined in specs-go as of this writing.
-	err = ll.extractJSON(manifest.Config.Digest, &img.Config)
-	if err != nil {
-		return image.Image{}, fmt.Errorf("reading image config: %w", err)
-	}
-
-	if len(img.Config.RootFS.DiffIDs) != len(manifest.Layers) {
-		return image.Image{}, fmt.Errorf("manifest layer count does not match DiffID count")
-	}
-	for i, layerDesc := range manifest.Layers {
-		blob, ok := ll.Blobs[layerDesc.Digest]
-		if !ok {
-			// From the spec: "The blobs directory MAY be missing referenced blobs, in
-			// which case the missing blobs SHOULD be fulfilled by an external blob
-			// store." For the sake of simplicity we're going to let that SHOULD do
-			// some work, at least for now.
-			return image.Image{}, fmt.Errorf("blob %s not found", layerDesc.Digest)
-		}
-		img.Layers = append(img.Layers, image.Layer{
-			Descriptor: layerDesc,
-			DiffID:     img.Config.RootFS.DiffIDs[i],
-			Blob: func(_ context.Context) (io.ReadCloser, error) {
-				return io.NopCloser(bytes.NewReader(blob)), nil
-			},
-		})
-	}
-
-	return img, nil
+	return image.Load(context.Background(), ll)
 }
 
 type loadedLayout struct {
@@ -106,12 +44,20 @@ type loadedLayout struct {
 	Blobs  map[digest.Digest][]byte
 }
 
-func (ll *loadedLayout) extractJSON(dgst digest.Digest, v interface{}) error {
+func (ll loadedLayout) OpenRootManifest(_ context.Context) (io.ReadCloser, error) {
+	index, err := json.Marshal(ll.Index)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(index)), nil
+}
+
+func (ll loadedLayout) OpenBlob(_ context.Context, dgst digest.Digest) (io.ReadCloser, error) {
 	blob, ok := ll.Blobs[dgst]
 	if !ok {
-		return fmt.Errorf("blob %s not found", dgst)
+		return nil, fmt.Errorf("archive is missing blob %s", dgst)
 	}
-	return json.Unmarshal(blob, v)
+	return io.NopCloser(bytes.NewReader(blob)), nil
 }
 
 func (ll *loadedLayout) populateFromTar(tr *tar.Reader) error {
@@ -126,7 +72,7 @@ func (ll *loadedLayout) populateFromTar(tr *tar.Reader) error {
 
 		switch {
 		case strings.HasPrefix(header.Name, "blobs/") && header.Typeflag == tar.TypeReg:
-			err = ll.addBlob(header.Name, tr)
+			err = ll.populateBlob(header.Name, tr)
 		case header.Name == "index.json":
 			err = json.NewDecoder(tr).Decode(&ll.Index)
 		case header.Name == specsv1.ImageLayoutFile:
@@ -141,7 +87,7 @@ func (ll *loadedLayout) populateFromTar(tr *tar.Reader) error {
 	}
 }
 
-func (ll *loadedLayout) addBlob(name string, r io.Reader) error {
+func (ll *loadedLayout) populateBlob(name string, r io.Reader) error {
 	pathAlg := path.Base(path.Dir(name))
 	pathDigest := path.Base(name)
 	dgst := digest.NewDigestFromEncoded(digest.Algorithm(pathAlg), pathDigest)

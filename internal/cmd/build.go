@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,11 +23,12 @@ var buildCmd = &cobra.Command{
 	Run:   runBuild,
 }
 
+var defaultPlatform = runtime.GOOS + "/" + runtime.GOARCH
+
 var (
 	buildFromArchive string
 	buildOutput      string
-	buildTargetArch  string
-	buildTargetOS    string
+	buildPlatform    string
 )
 
 func init() {
@@ -34,8 +36,7 @@ func init() {
 
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
-	buildCmd.Flags().StringVar(&buildTargetArch, "target-arch", runtime.GOARCH, "Set the target architecture of the image")
-	buildCmd.Flags().StringVar(&buildTargetOS, "target-os", runtime.GOOS, "Set the target OS of the image")
+	buildCmd.Flags().StringVar(&buildPlatform, "platform", defaultPlatform, "Select the desired platform for the image")
 
 	buildCmd.MarkFlagFilename("from-archive", "tar")
 	buildCmd.MarkFlagFilename("output", "tar")
@@ -50,27 +51,36 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
+	targetPlatform, err := image.ParsePlatform(buildPlatform)
+	if err != nil {
+		log.Fatal("Could not parse target platform: ", err)
+	}
+
 	var img image.Image
 	if buildFromArchive == "" {
 		log.Println("Building image from scratch")
-		img.SetPlatform(specsv1.Platform{OS: buildTargetOS, Architecture: buildTargetArch})
+		img.SetPlatform(targetPlatform)
 	} else {
 		log.Printf("Loading base image: %s", buildFromArchive)
 		base, err := os.Open(buildFromArchive)
 		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
+			log.Fatal("Unable to load base archive: ", err)
 		}
-		img, err = ociarchive.LoadArchive(base)
+		index, err := ociarchive.LoadArchive(base)
 		if err != nil {
-			log.Fatal("Unable to load base image: ", err)
+			log.Fatal("Unable to load base archive: ", err)
 		}
 		base.Close()
-		if img.Config.OS != buildTargetOS || img.Config.Architecture != buildTargetArch {
+		platformIndex := index.SelectByPlatform(targetPlatform)
+		if len(platformIndex) != 1 {
 			log.Fatalf(
-				"Base image platform %s/%s does not match output platform %s/%s",
-				img.Config.OS, img.Config.Architecture,
-				buildTargetOS, buildTargetArch,
+				"Could not find a single base image matching the %s platform",
+				image.FormatPlatform(targetPlatform),
 			)
+		}
+		img, err = platformIndex[0].GetImage(context.Background())
+		if err != nil {
+			log.Fatal("Unable to load base image: ", err)
 		}
 	}
 

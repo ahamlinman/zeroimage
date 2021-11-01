@@ -55,7 +55,7 @@ func (b *Builder) Finish() (image.Layer, error) {
 			Size:      int64(b.buf.Len()),
 		},
 		DiffID: digest.NewDigest(digest.Canonical, b.tarHash),
-		Blob: func(_ context.Context) (io.ReadCloser, error) {
+		OpenBlob: func(_ context.Context) (io.ReadCloser, error) {
 			return io.NopCloser(bytes.NewReader(b.buf.Bytes())), nil
 		},
 	}, nil
