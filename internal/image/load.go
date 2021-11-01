@@ -12,16 +12,35 @@ import (
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// Supported JSON manifest formats. The Docker-specific formats are generally
+// compatible with the listed OCI definitions, in terms of the JSON schema and
+// semantics of the values, at least for the most important fields.
+var (
+	supportedIndexMediaTypes = map[string]bool{
+		specsv1.MediaTypeImageIndex:                                 true,
+		"application/vnd.docker.distribution.manifest.list.v2+json": true,
+	}
+	supportedManifestMediaTypes = map[string]bool{
+		specsv1.MediaTypeImageManifest:                         true,
+		"application/vnd.docker.distribution.manifest.v2+json": true,
+	}
+)
+
 // Loader represents a source of manifest and blob information for container
 // images.
 type Loader interface {
 	// OpenRootManifest returns a reader for a JSON-encoded entrypoint manifest,
-	// which may be an OCI image index or a compatible image manifest.
+	// which may be an OCI image index, Docker v2 manifest list, OCI image
+	// manifest, or Docker v2 image manifest.
 	OpenRootManifest(context.Context) (io.ReadCloser, error)
-	// OpenBlob returns a reader for the blob matching the provided digest.
+	// OpenBlob returns a reader for a blob whose content matches the provided
+	// digest.
 	OpenBlob(context.Context, digest.Digest) (io.ReadCloser, error)
 }
 
+// Load builds an image index using the provided Loader. Methods on the returned
+// Index, as well as on all Images loaded from the Index, will use the same
+// Loader to access image configuration and filesystem layer blobs.
 func Load(ctx context.Context, l Loader) (Index, error) {
 	loader := loader{Loader: l}
 	if err := loader.InitRootIndex(ctx); err != nil {
@@ -59,7 +78,7 @@ func (l *loader) InitRootIndex(ctx context.Context) error {
 		return err
 	}
 
-	if mediaType.MediaType == specsv1.MediaTypeImageManifest {
+	if supportedManifestMediaTypes[mediaType.MediaType] {
 		return l.initRootWithManifest(rootContent)
 	} else {
 		return json.Unmarshal(rootContent, &l.rootIndex)
@@ -162,7 +181,7 @@ func (l *loader) getAllManifestDescriptors(ctx context.Context) ([]specsv1.Descr
 	var descriptors []specsv1.Descriptor
 	for _, idx := range indexes {
 		for _, desc := range idx.Manifests {
-			if desc.MediaType == specsv1.MediaTypeImageManifest {
+			if supportedManifestMediaTypes[desc.MediaType] {
 				descriptors = append(descriptors, desc)
 			}
 		}
@@ -173,7 +192,7 @@ func (l *loader) getAllManifestDescriptors(ctx context.Context) ([]specsv1.Descr
 func (l *loader) getAllIndexes(ctx context.Context) ([]specsv1.Index, error) {
 	indexes := []specsv1.Index{l.rootIndex}
 	for _, desc := range l.rootIndex.Manifests {
-		if desc.MediaType == specsv1.MediaTypeImageIndex {
+		if supportedIndexMediaTypes[desc.MediaType] {
 			nested, err := l.getNestedIndex(ctx, desc.Digest)
 			if err != nil {
 				return nil, fmt.Errorf("loading nested index: %w", err)
