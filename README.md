@@ -67,7 +67,7 @@ skopeo copy docker://alpine:latest oci-archive:alpine.tar
 # Build a new OCI image archive using the base image and your entrypoint. By
 # default zeroimage will name the output file "some-program.tar", based on the
 # entrypoint name.
-zeroimage build --from-archive distroless-base.tar some-program
+zeroimage build --from-archive alpine.tar some-program
 ```
 
 **Example:** Build a `FROM scratch`-style image and load it into Docker:
