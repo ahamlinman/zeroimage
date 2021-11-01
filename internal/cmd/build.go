@@ -26,9 +26,9 @@ var buildCmd = &cobra.Command{
 var defaultPlatform = runtime.GOOS + "/" + runtime.GOARCH
 
 var (
-	buildFromArchive    string
-	buildOutput         string
-	buildTargetPlatform string
+	buildFromArchive string
+	buildOutput      string
+	buildPlatform    string
 )
 
 func init() {
@@ -36,7 +36,7 @@ func init() {
 
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
-	buildCmd.Flags().StringVar(&buildTargetPlatform, "target-platform", defaultPlatform, "Set the target platform of the image")
+	buildCmd.Flags().StringVar(&buildPlatform, "platform", defaultPlatform, "Select the desired platform for the image")
 
 	buildCmd.MarkFlagFilename("from-archive", "tar")
 	buildCmd.MarkFlagFilename("output", "tar")
@@ -51,7 +51,7 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
-	targetPlatform, err := image.ParsePlatform(buildTargetPlatform)
+	targetPlatform, err := image.ParsePlatform(buildPlatform)
 	if err != nil {
 		log.Fatal("Could not parse target platform: ", err)
 	}
