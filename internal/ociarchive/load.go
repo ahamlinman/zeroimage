@@ -17,13 +17,12 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/image"
 )
 
-// LoadArchive loads a container image from a tar archive whose contents comply
-// with the OCI Image Layout Specification, and that contains exactly one image
-// manifest.
+// LoadArchive loads an image index from a tar archive whose contents comply
+// with the OCI Image Layout Specification.
 //
 // The current implementation of LoadArchive buffers all of the archive's blobs
 // in memory, and requires that all blobs referenced by manifests appear in the
-// archive itself.
+// archive itself without requiring downloads from URLs.
 func LoadArchive(r io.Reader) (image.Index, error) {
 	var ll loadedLayout
 	if err := ll.populateFromTar(tar.NewReader(r)); err != nil {

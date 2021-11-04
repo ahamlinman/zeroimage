@@ -1,3 +1,5 @@
+// Package registry works with remote registries that implement the OCI
+// Distribution Specification.
 package registry
 
 import (
@@ -17,6 +19,9 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/image"
 )
 
+// Load loads an image index identified by a Docker-style reference from a
+// remote OCI registry, using credentials from the local Docker keychain to
+// authenticate to the registry if necessary.
 func Load(ctx context.Context, reference string) (image.Index, error) {
 	name, err := name.ParseReference(reference)
 	if err != nil {
