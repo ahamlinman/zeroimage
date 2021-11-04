@@ -22,10 +22,12 @@ func Load(ctx context.Context, reference string) (image.Index, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	authenticator, err := authn.DefaultKeychain.Resolve(name.Context())
 	if err != nil {
 		authenticator = authn.Anonymous
 	}
+
 	transport, err := transport.NewWithContext(
 		ctx,
 		name.Context().Registry,
@@ -38,17 +40,17 @@ func Load(ctx context.Context, reference string) (image.Index, error) {
 	}
 
 	return image.Load(ctx, loader{
+		Name: name,
 		Client: http.Client{
 			Transport: transport,
 			Timeout:   10 * time.Second,
 		},
-		Name: name,
 	})
 }
 
 type loader struct {
-	Client http.Client
 	Name   name.Reference
+	Client http.Client
 }
 
 func (l loader) OpenRootManifest(ctx context.Context) (io.ReadCloser, error) {
@@ -96,8 +98,5 @@ func (l loader) doRequest(req *http.Request) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := transport.CheckError(resp, http.StatusOK); err != nil {
-		return nil, err
-	}
-	return resp.Body, nil
+	return resp.Body, transport.CheckError(resp, http.StatusOK)
 }
