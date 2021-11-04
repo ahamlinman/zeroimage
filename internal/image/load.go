@@ -12,9 +12,9 @@ import (
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-// Supported JSON manifest formats. The Docker-specific formats are generally
-// compatible with the listed OCI definitions, in terms of the JSON schema and
-// semantics of the values, at least for the most important fields.
+// Supported JSON manifest formats. The Docker-specific formats are compatible
+// enough with the OCI-specified definitions that unmarshaling into the Go type
+// defined by OCI should give us at least enough data to be useful.
 var (
 	SupportedIndexMediaTypes = []string{
 		specsv1.MediaTypeImageIndex,
@@ -95,10 +95,12 @@ func (l *loader) InitRootIndex(ctx context.Context) error {
 		return err
 	}
 
-	if supportedManifestMediaTypes[mediaType.MediaType] {
+	if supportedIndexMediaTypes[mediaType.MediaType] {
+		return json.Unmarshal(rootContent, &l.rootIndex)
+	} else if supportedManifestMediaTypes[mediaType.MediaType] {
 		return l.initRootWithManifest(rootContent)
 	} else {
-		return json.Unmarshal(rootContent, &l.rootIndex)
+		return fmt.Errorf("unsupported manifest type %s", mediaType.MediaType)
 	}
 }
 
@@ -115,6 +117,11 @@ func (l *loader) initRootWithManifest(content []byte) error {
 	dgst := digest.FromBytes(content)
 	l.manifests[dgst] = manifest
 
+	// Depending on the implementation of the loader, this might implicitly rely
+	// on manifest loads always checking the "cache" first. A remote registry
+	// should always allow pulling manifests by digest, for example, but some
+	// custom loader may or may not do that for what it thinks is the "root"
+	// manifest. Not sure how big of a deal that might be.
 	l.rootIndex = specsv1.Index{
 		Versioned: specs.Versioned{SchemaVersion: 2},
 		Manifests: []specsv1.Descriptor{{
