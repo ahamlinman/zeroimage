@@ -13,14 +13,14 @@ import (
 	"go.alexhamlin.co/zeroimage/internal/tarbuild"
 )
 
-// WriteArchive writes a single container image as a tar archive whose contents
+// WriteImage writes a single container image as a tar archive whose contents
 // comply with the OCI Image Layout Specification.
-func WriteArchive(img image.Image, w io.Writer) error {
+func WriteImage(img image.Image, w io.Writer) error {
 	iw := imageWriter{
 		tar:   tarbuild.NewBuilder(w),
 		image: img,
 	}
-	return iw.WriteArchive()
+	return iw.WriteImage()
 }
 
 type imageWriter struct {
@@ -28,7 +28,7 @@ type imageWriter struct {
 	image image.Image
 }
 
-func (iw *imageWriter) WriteArchive() error {
+func (iw *imageWriter) WriteImage() error {
 	for _, layer := range iw.image.Layers {
 		blob, err := layer.OpenBlob(context.TODO())
 		if err != nil {

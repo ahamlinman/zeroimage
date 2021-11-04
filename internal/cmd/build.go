@@ -93,7 +93,7 @@ func runBuild(_ *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal("Unable to create output file: ", err)
 	}
-	if err := ociarchive.WriteArchive(img, output); err != nil {
+	if err := ociarchive.WriteImage(img, output); err != nil {
 		log.Fatal("Failed to write image: ", err)
 	}
 	if err := output.Close(); err != nil {
@@ -146,7 +146,7 @@ func loadBaseFromArchive() (image.Index, error) {
 	}
 	defer base.Close()
 
-	return ociarchive.LoadArchive(base)
+	return ociarchive.Load(base)
 }
 
 func loadBaseFromRegistry() (image.Index, error) {
