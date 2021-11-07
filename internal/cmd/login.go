@@ -41,7 +41,7 @@ func runLogin(_ *cobra.Command, args []string) {
 	}
 
 	// This is very much inspired by the implementation of "crane auth".
-	// https://github.com/google/go-containerregistry/blob/main/cmd/crane/cmd/auth.go
+	// https://github.com/google/go-containerregistry/blob/v0.6.0/cmd/crane/cmd/auth.go
 
 	registry, err := name.NewRegistry(args[0])
 	if err != nil {

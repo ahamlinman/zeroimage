@@ -174,11 +174,7 @@ func (p *pusher) getBlobUploadURL(ctx context.Context) (u *url.URL, err error) {
 		return nil, err
 	}
 
-	location, err := url.Parse(resp.Header.Get("Location"))
-	if err != nil {
-		return nil, err
-	}
-	return uploadURL.ResolveReference(location), nil
+	return uploadURL.Parse(resp.Header.Get("Location"))
 }
 
 func (p *pusher) uploadManifest(ctx context.Context, img image.Image, configDesc specsv1.Descriptor) error {
