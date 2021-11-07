@@ -29,16 +29,16 @@ type IndexEntry struct {
 // Examples
 //
 // If idx references images for both the v6 and v7 variants of the linux/arm
-// platform, and platform.Variant is empty, SelectByPlatform will return an
-// index referencing both images.
+// platform, and platform is linux/arm, SelectByPlatform will return an index
+// referencing both images.
 //
 // If idx only references an image for the v8 variant of the linux/arm64
-// platform, and platform.Variant is empty, SelectByPlatform will return an
-// index referencing only that image.
+// platform, and platform is linux/arm64, SelectByPlatform will return an index
+// referencing only that image.
 //
 // If idx only references an image for the v8 variant of the linux/arm64
-// platform, and platform.Variant is set to "v9", SelectByPlatform will return
-// an empty index.
+// platform, and platform is linux/arm64/v9, SelectByPlatform will return an
+// empty index.
 //
 // If idx includes Windows images and platform.OSFeatures includes "win32k",
 // SelectByPlatform will only return images that include the "win32k" feature.
