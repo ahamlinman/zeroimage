@@ -1,5 +1,3 @@
-// Package registry works with remote registries that implement the OCI
-// Distribution Specification.
 package registry
 
 import (
@@ -9,9 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/opencontainers/go-digest"
@@ -28,18 +24,7 @@ func Load(ctx context.Context, reference string) (image.Index, error) {
 		return nil, err
 	}
 
-	authenticator, err := authn.DefaultKeychain.Resolve(name.Context())
-	if err != nil {
-		authenticator = authn.Anonymous
-	}
-
-	transport, err := transport.NewWithContext(
-		ctx,
-		name.Context().Registry,
-		authenticator,
-		http.DefaultTransport,
-		[]string{name.Scope(transport.PullScope)},
-	)
+	transport, err := newTransport(ctx, name, transport.PullScope)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +33,7 @@ func Load(ctx context.Context, reference string) (image.Index, error) {
 		Name: name,
 		Client: http.Client{
 			Transport: transport,
-			Timeout:   10 * time.Second,
+			Timeout:   httpTimeout,
 		},
 	})
 }
