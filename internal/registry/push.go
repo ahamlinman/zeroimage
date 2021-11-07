@@ -97,23 +97,27 @@ func (p *pusher) uploadConfig(ctx context.Context, config image.Config) (specsv1
 		Digest:    digest.FromBytes(configJSON),
 		Size:      int64(len(configJSON)),
 	}
+	if p.canSkipBlobUpload(ctx, desc.Digest) {
+		return desc, nil
+	}
 	return desc, p.uploadBlob(ctx, desc.Digest, desc.Size, bytes.NewReader(configJSON))
 }
 
 func (p *pusher) uploadLayer(ctx context.Context, layer image.Layer) error {
+	if p.canSkipBlobUpload(ctx, layer.Descriptor.Digest) {
+		return nil
+	}
+
 	r, err := layer.OpenBlob(ctx)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
+
 	return p.uploadBlob(ctx, layer.Descriptor.Digest, layer.Descriptor.Size, r)
 }
 
 func (p *pusher) uploadBlob(ctx context.Context, dgst digest.Digest, size int64, r io.Reader) error {
-	if ok, err := p.hasBlob(ctx, dgst); ok || err != nil {
-		return err
-	}
-
 	uploadURL, err := p.getBlobUploadURL(ctx)
 	if err != nil {
 		return err
@@ -142,19 +146,19 @@ func (p *pusher) uploadBlob(ctx context.Context, dgst digest.Digest, size int64,
 	return transport.CheckError(resp, http.StatusCreated)
 }
 
-func (p *pusher) hasBlob(ctx context.Context, dgst digest.Digest) (ok bool, err error) {
+func (p *pusher) canSkipBlobUpload(ctx context.Context, dgst digest.Digest) (ok bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, p.url("/blobs/%s", dgst).String(), nil)
 	if err != nil {
-		return false, err
+		return false
 	}
 
 	resp, err := p.Client.Do(req)
 	if err != nil {
-		return false, err
+		return false
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode == http.StatusOK, transport.CheckError(resp, http.StatusOK, http.StatusNotFound)
+	return resp.StatusCode == http.StatusOK
 }
 
 func (p *pusher) getBlobUploadURL(ctx context.Context) (u *url.URL, err error) {
