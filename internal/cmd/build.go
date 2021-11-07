@@ -32,6 +32,7 @@ var (
 	buildFromArchive string
 	buildOutput      string
 	buildPlatform    string
+	buildPush        string
 )
 
 func init() {
@@ -41,6 +42,7 @@ func init() {
 	buildCmd.Flags().StringVar(&buildFromArchive, "from-archive", "", "Use an existing image archive as a base")
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "", "Write the image archive to this path (default [ENTRYPOINT].tar)")
 	buildCmd.Flags().StringVar(&buildPlatform, "platform", defaultPlatform, "Select the desired platform for the image")
+	buildCmd.Flags().StringVar(&buildPush, "push", "", "Push the image to this tag in a remote registry")
 
 	buildCmd.MarkFlagFilename("from-archive", "tar")
 	buildCmd.MarkFlagFilename("output", "tar")
@@ -88,16 +90,9 @@ func runBuild(_ *cobra.Command, args []string) {
 	img.Config.Config.Entrypoint = []string{entrypointTargetPath}
 	img.Config.Config.Cmd = nil
 
-	log.Printf("Writing image: %s", buildOutput)
-	output, err := os.Create(buildOutput)
+	err = outputImage(img)
 	if err != nil {
-		log.Fatal("Unable to create output file: ", err)
-	}
-	if err := ociarchive.WriteImage(img, output); err != nil {
-		log.Fatal("Failed to write image: ", err)
-	}
-	if err := output.Close(); err != nil {
-		log.Fatal("Failed to write image: ", err)
+		log.Fatal("Failed to output image: ", err)
 	}
 }
 
@@ -152,4 +147,28 @@ func loadBaseFromArchive() (image.Index, error) {
 func loadBaseFromRegistry() (image.Index, error) {
 	log.Printf("Loading base image from registry: %s", buildFrom)
 	return registry.Load(context.TODO(), buildFrom)
+}
+
+func outputImage(img image.Image) error {
+	if buildPush != "" {
+		return outputImageToRegistry(img)
+	}
+	return outputImageToArchive(img)
+}
+
+func outputImageToRegistry(img image.Image) error {
+	log.Printf("Pushing image: %s", buildPush)
+	return registry.Push(context.Background(), img, buildPush)
+}
+
+func outputImageToArchive(img image.Image) error {
+	log.Printf("Writing image: %s", buildOutput)
+	output, err := os.Create(buildOutput)
+	if err != nil {
+		return err
+	}
+	if err := ociarchive.WriteImage(img, output); err != nil {
+		return err
+	}
+	return output.Close()
 }
