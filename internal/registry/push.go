@@ -22,10 +22,10 @@ import (
 
 const concurrentLayerUploads = 3
 
-// Push pushes a single container image to a remote OCI registry, using
+// PushImage pushes a single container image to a remote OCI registry, using
 // credentials from the local Docker keychain to authenticate to the registry if
 // necessary.
-func Push(ctx context.Context, img image.Image, reference string) error {
+func PushImage(ctx context.Context, img image.Image, reference string) error {
 	tag, err := name.NewTag(reference)
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ func Push(ctx context.Context, img image.Image, reference string) error {
 			Timeout:   httpTimeout,
 		},
 	}
-	return p.Push(ctx, img)
+	return p.PushImage(ctx, img)
 }
 
 type pusher struct {
@@ -51,7 +51,7 @@ type pusher struct {
 	Client http.Client
 }
 
-func (p *pusher) Push(ctx context.Context, img image.Image) error {
+func (p *pusher) PushImage(ctx context.Context, img image.Image) error {
 	layersCh := make(chan image.Layer, len(img.Layers))
 	for _, layer := range img.Layers {
 		layersCh <- layer

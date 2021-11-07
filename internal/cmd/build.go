@@ -158,7 +158,7 @@ func outputImage(img image.Image) error {
 
 func outputImageToRegistry(img image.Image) error {
 	log.Printf("Pushing image: %s", buildPush)
-	return registry.Push(context.Background(), img, buildPush)
+	return registry.PushImage(context.Background(), img, buildPush)
 }
 
 func outputImageToArchive(img image.Image) error {
