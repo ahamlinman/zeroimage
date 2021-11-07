@@ -46,9 +46,9 @@ type Loader interface {
 	// which may be an OCI image index, Docker v2 manifest list, OCI image
 	// manifest, or Docker v2 image manifest.
 	OpenRootManifest(context.Context) (io.ReadCloser, error)
-	// OpenManifest returns a reader for a JSON-encoded manifest, which may be an
-	// OCI image index, Docker v2 manifest list, OCI image manifest, or Docker v2
-	// image manifest.
+	// OpenManifest returns a reader for a JSON-encoded manifest that matches the
+	// provided digest, which may be an OCI image index, Docker v2 manifest list,
+	// OCI image manifest, or Docker v2 image manifest.
 	OpenManifest(context.Context, digest.Digest) (io.ReadCloser, error)
 	// OpenBlob returns a reader for a blob whose content matches the provided
 	// digest.
