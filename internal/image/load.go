@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
@@ -69,10 +70,16 @@ func Load(ctx context.Context, l Loader) (Index, error) {
 type loader struct {
 	Loader
 
+	// Only modified during initialization, safe to avoid locking.
 	rootIndex     specsv1.Index
 	nestedIndexes map[digest.Digest]specsv1.Index
-	manifests     map[digest.Digest]specsv1.Manifest
-	configs       map[digest.Digest]Config
+
+	// May be modified concurrently as images are accessed. Our use case fits well
+	// with sync.Map: each entry only needs to be written once, and different
+	// goroutines are likely touching different images in the index, which means
+	// they would touch disjoint keys in these maps.
+	manifests sync.Map
+	configs   sync.Map
 }
 
 func (l *loader) InitRootIndex(ctx context.Context) error {
@@ -111,11 +118,8 @@ func (l *loader) initRootWithManifest(content []byte) error {
 		return err
 	}
 
-	if l.manifests == nil {
-		l.manifests = make(map[digest.Digest]specsv1.Manifest)
-	}
 	dgst := digest.FromBytes(content)
-	l.manifests[dgst] = manifest
+	l.manifests.Store(dgst, manifest)
 
 	// Depending on the implementation of the loader, this might implicitly rely
 	// on manifest loads always checking the "cache" first. A remote registry
@@ -154,46 +158,6 @@ func (l *loader) BuildIndex(ctx context.Context) (Index, error) {
 		}
 	}
 	return idx, nil
-}
-
-func (l *loader) BuildImage(ctx context.Context, manifestDescriptor specsv1.Descriptor) (Image, error) {
-	platform, err := l.getPlatformByManifestDescriptor(ctx, manifestDescriptor)
-	if err != nil {
-		return Image{}, err
-	}
-
-	manifest, err := l.getManifest(ctx, manifestDescriptor.Digest)
-	if err != nil {
-		return Image{}, err
-	}
-
-	config, err := l.getConfig(ctx, manifest.Config.Digest)
-	if err != nil {
-		return Image{}, err
-	}
-
-	if len(manifest.Layers) != len(config.RootFS.DiffIDs) {
-		return Image{}, errors.New("manifest layer count does not match diff ID count")
-	}
-
-	layers := make([]Layer, len(manifest.Layers))
-	for i, layerDesc := range manifest.Layers {
-		layerDesc := layerDesc
-		layers[i] = Layer{
-			Descriptor: layerDesc,
-			DiffID:     config.RootFS.DiffIDs[i],
-			OpenBlob: func(ctx context.Context) (io.ReadCloser, error) {
-				return l.OpenBlob(ctx, layerDesc.Digest)
-			},
-		}
-	}
-
-	return Image{
-		Layers:      layers,
-		Config:      config,
-		Platform:    platform,
-		Annotations: manifest.Annotations,
-	}, nil
 }
 
 func (l *loader) getAllManifestDescriptors(ctx context.Context) ([]specsv1.Descriptor, error) {
@@ -245,6 +209,46 @@ func (l *loader) getNestedIndex(ctx context.Context, dgst digest.Digest) (specsv
 	return nested, nil
 }
 
+func (l *loader) BuildImage(ctx context.Context, manifestDescriptor specsv1.Descriptor) (Image, error) {
+	platform, err := l.getPlatformByManifestDescriptor(ctx, manifestDescriptor)
+	if err != nil {
+		return Image{}, err
+	}
+
+	manifest, err := l.getManifest(ctx, manifestDescriptor.Digest)
+	if err != nil {
+		return Image{}, err
+	}
+
+	config, err := l.getConfig(ctx, manifest.Config.Digest)
+	if err != nil {
+		return Image{}, err
+	}
+
+	if len(manifest.Layers) != len(config.RootFS.DiffIDs) {
+		return Image{}, errors.New("manifest layer count does not match diff ID count")
+	}
+
+	layers := make([]Layer, len(manifest.Layers))
+	for i, layerDesc := range manifest.Layers {
+		layerDesc := layerDesc
+		layers[i] = Layer{
+			Descriptor: layerDesc,
+			DiffID:     config.RootFS.DiffIDs[i],
+			OpenBlob: func(ctx context.Context) (io.ReadCloser, error) {
+				return l.OpenBlob(ctx, layerDesc.Digest)
+			},
+		}
+	}
+
+	return Image{
+		Layers:      layers,
+		Config:      config,
+		Platform:    platform,
+		Annotations: manifest.Annotations,
+	}, nil
+}
+
 func (l *loader) getPlatformByManifestDescriptor(ctx context.Context, md specsv1.Descriptor) (specsv1.Platform, error) {
 	if md.Platform != nil {
 		return *md.Platform, nil
@@ -270,39 +274,35 @@ func (l *loader) getPlatformByManifestDescriptor(ctx context.Context, md specsv1
 }
 
 func (l *loader) getManifest(ctx context.Context, dgst digest.Digest) (specsv1.Manifest, error) {
-	if manifest, ok := l.manifests[dgst]; ok {
-		return manifest, nil
+	if m, ok := l.manifests.Load(dgst); ok {
+		return m.(specsv1.Manifest), nil
 	}
 
+	// TODO: Deduplicate these reads?
 	var manifest specsv1.Manifest
 	err := l.readJSONManifest(ctx, dgst, &manifest)
 	if err != nil {
 		return specsv1.Manifest{}, err
 	}
 
-	if l.manifests == nil {
-		l.manifests = make(map[digest.Digest]specsv1.Manifest)
-	}
-	l.manifests[dgst] = manifest
-	return manifest, nil
+	m, _ := l.manifests.LoadOrStore(dgst, manifest)
+	return m.(specsv1.Manifest), nil
 }
 
 func (l *loader) getConfig(ctx context.Context, dgst digest.Digest) (Config, error) {
-	if config, ok := l.configs[dgst]; ok {
-		return config, nil
+	if c, ok := l.configs.Load(dgst); ok {
+		return c.(Config), nil
 	}
 
+	// TODO: Deduplicate these reads?
 	var config Config
 	err := l.readJSONBlob(ctx, dgst, &config)
 	if err != nil {
 		return Config{}, err
 	}
 
-	if l.configs == nil {
-		l.configs = make(map[digest.Digest]Config)
-	}
-	l.configs[dgst] = config
-	return config, nil
+	c, _ := l.configs.LoadOrStore(dgst, config)
+	return c.(Config), nil
 }
 
 func (l *loader) readJSONManifest(ctx context.Context, dgst digest.Digest, v interface{}) error {
