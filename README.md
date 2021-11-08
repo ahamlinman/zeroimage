@@ -29,33 +29,48 @@ runtime.
   that produce the smallest possible output, which can be helpful on serverless
   container platforms like AWS Lambda.
 
-[imports]: https://pkg.go.dev/go.alexhamlin.co/zeroimage?tab=imports
-
 ## Usage
 
-zeroimage currently only produces `.tar` archives whose contents comply with the
-[OCI Image Format Specification][oci]. Not all container tools support OCI image
-archives! Docker in particular uses a proprietary `.tar` layout that is not
-OCI-compatible. You will probably use zeroimage alongside a tool like
-[Skopeo][skopeo] to push and pull OCI image archives to and from registries, or
-to load images into a container runtime.
+zeroimage works with remote registries that implement the [OCI Distribution
+Specification][oci-distribution], or with `.tar` archives whose contents comply
+with the [OCI Image Format Specification][oci-format]. Many popular container
+tools and image registries support the OCI standards, with the notable
+exceptions of Docker and Docker Hub (as of November 2021). Docker can only load
+and save `.tar` archives in a proprietary format, and while Docker Hub supports
+pushing and pulling OCI images it does not allow you to browse them properly in
+the web UI. You can use [Skopeo][skopeo] to work with Docker and Docker Hub, as
+shown in the examples below.
 
-zeroimage can consume base images from OCI image archives, or from a remote
-registry. zeroimage will automatically authenticate to private registries using
-your Docker login credentials if necessary (the same credentials managed by
-`docker login`).
+zeroimage uses your local Docker login credentials (the same credentials managed
+by `docker login`) to authenticate with remote registries. You can also use
+`zeroimage login` and `zeroimage logout` to manage these credentials. See the
+CLI help for these commands for details.
 
 **Example:** Publish an image with a [distroless][distroless] base layer, which
 contains a basic Linux system layout but no shell or package manager:
 
 ```sh
-# Build a new OCI image archive using the base image and your entrypoint. By
-# default zeroimage will name the output file "some-program.tar", based on the
-# entrypoint name.
-zeroimage build --from gcr.io/distroless/static:latest some-program
+# Build a new image using the base image and your entrypoint, and push it
+# directly to a private registry. You can use "zeroimage login" to configure
+# credentials for the private registry.
+zeroimage build \
+  --from gcr.io/distroless/static:latest \
+  --push registry.example.com/some-program:latest \
+  some-program
+```
 
-# Publish the new image to your own registry.
-skopeo copy oci-archive:some-program.tar docker://registry.example.com/some-program:latest
+**Example:** Publish a `FROM scratch`-style image using a cross-compiled binary:
+
+```sh
+# Build and push an image with an ARM v8 entrypoint using the Busybox multi
+# platform image from Docker Hub as a base. This works even on non-ARM hosts, as
+# long as the entrypoint is properly cross-compiled. Note that zeroimage can
+# only build images targeting a single platform.
+zeroimage build \
+  --from busybox:latest \
+  --platform linux/arm64/v8 \
+  --push registry.example.com/some-program-arm64:latest \
+  some-program-arm64
 ```
 
 **Example:** Extend a base image stored in a tar archive on disk:
@@ -68,6 +83,10 @@ skopeo copy docker://alpine:latest oci-archive:alpine.tar
 # default zeroimage will name the output file "some-program.tar", based on the
 # entrypoint name.
 zeroimage build --from-archive alpine.tar some-program
+
+# Push the image to Docker Hub with Skopeo, converting OCI manifests to Docker
+# v2 manifests so that Docker Hub can display the image correctly.
+skopeo copy --format v2s2 oci-archive:some-program.tar docker://example/some-program:latest
 ```
 
 **Example:** Build a `FROM scratch`-style image and load it into Docker:
@@ -82,7 +101,8 @@ zeroimage build some-program
 skopeo copy oci-archive:some-program.tar docker-daemon:registry.example.com/some-program:latest
 ```
 
-[oci]: https://github.com/opencontainers/image-spec
+[oci-distribution]: https://github.com/opencontainers/distribution-spec
+[oci-format]: https://github.com/opencontainers/image-spec
 [skopeo]: https://github.com/containers/skopeo
 [distroless]: https://github.com/GoogleContainerTools/distroless
 

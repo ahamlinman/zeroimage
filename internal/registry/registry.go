@@ -37,6 +37,9 @@ func newTransport(ctx context.Context, name name.Reference, scopes ...string) (h
 	)
 }
 
+// CheckPushAuth validates that the current authentication configuration allows
+// pushing blobs to a given repository. It returns a non-nil error if an upload
+// could not be initiated for any reason.
 func CheckPushAuth(ctx context.Context, reference string) error {
 	name, err := name.ParseReference(reference)
 	if err != nil {
