@@ -19,6 +19,9 @@ It can produce single-layer `FROM scratch`-style images, or extend an existing
 base image to include your program, without ever touching a full container
 runtime.
 
+**WARNING:** The zeroimage CLI is unstable, and subject to change. Be careful
+with any kind of automation around zeroimage.
+
 ### Why zeroimage?
 
 - It doesn't depend on a container runtime, which can simplify image builds for
