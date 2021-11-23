@@ -128,8 +128,6 @@ Other notable caveats include, but are not limited to:
 
 ## Future Work
 
-- Include built in support for pushing to OCI registries, to reduce the heavy
-  dependency on external tools like Skopeo.
 - Instead of building `FROM scratch` by default, provide a built-in minimal base
   that removes some of the caveats noted above. For example, automatically
   bundle a standard `/etc/passwd` and a known set of TLS roots by default.
