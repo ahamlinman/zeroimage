@@ -234,6 +234,14 @@ func (l *loader) BuildImage(ctx context.Context, manifestDescriptor specsv1.Desc
 		layerDesc := layerDesc
 		layerDesc.MediaType = normalizeLayerMediaType(layerDesc.MediaType)
 
+		if isNondistributableMediaType(layerDesc.MediaType) {
+			// TODO: It definitely feels wrong that this affects the process of
+			// *loading* the image rather than *pushing* it, however I'm not
+			// convinced that any of the rest of the program is prepared to handle
+			// this kind of layer. Should revisit this in the future.
+			return Image{}, errors.New("image contains nondistributable layers")
+		}
+
 		layers[i] = Layer{
 			Descriptor: layerDesc,
 			DiffID:     config.RootFS.DiffIDs[i],
@@ -335,4 +343,13 @@ func normalizeLayerMediaType(mediaType string) string {
 	default:
 		return mediaType
 	}
+}
+
+func isNondistributableMediaType(mediaType string) bool {
+	// TODO: Parse the media type somehow for a more generic check?
+	if mediaType == specsv1.MediaTypeImageLayerNonDistributable ||
+		mediaType == specsv1.MediaTypeImageLayerNonDistributableGzip {
+		return true
+	}
+	return false
 }
