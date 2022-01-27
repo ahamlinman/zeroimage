@@ -232,6 +232,8 @@ func (l *loader) BuildImage(ctx context.Context, manifestDescriptor specsv1.Desc
 	layers := make([]Layer, len(manifest.Layers))
 	for i, layerDesc := range manifest.Layers {
 		layerDesc := layerDesc
+		layerDesc.MediaType = normalizeLayerMediaType(layerDesc.MediaType)
+
 		layers[i] = Layer{
 			Descriptor: layerDesc,
 			DiffID:     config.RootFS.DiffIDs[i],
@@ -321,4 +323,16 @@ func (l *loader) readJSONBlob(ctx context.Context, dgst digest.Digest, v interfa
 	}
 	defer rdr.Close()
 	return json.NewDecoder(rdr).Decode(v)
+}
+
+func normalizeLayerMediaType(mediaType string) string {
+	// TODO: How certain is it that this kind of direct translation is safe?
+	switch mediaType {
+	case "application/vnd.docker.image.rootfs.diff.tar.gzip":
+		return specsv1.MediaTypeImageLayerGzip
+	case "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip":
+		return specsv1.MediaTypeImageLayerNonDistributableGzip
+	default:
+		return mediaType
+	}
 }
