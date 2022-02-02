@@ -41,17 +41,17 @@ func (aerr AddError) Unwrap() error {
 // All entries in the archive will have clean relative paths, and will be owned
 // by UID and GID 0. Before writing an entry, a Builder will add all parent
 // directories of the entry that have not yet been added. These directories will
-// have mode 755, and their modification times will be set to the time at which
-// the Builder was created.
+// have mode 755, and their modification times will be set to DefaultModTime.
 //
 // If an error occurs while using a Builder, no more entries will be written to
 // the archive and all subsequent operations, and Close, will return the error.
 // After all entries have been written, the client must call Close to write the
 // tar footer. It is an error to attempt to add entries to a closed Builder.
 type Builder struct {
+	DefaultModTime time.Time
+
 	tw      *tar.Writer
 	err     error
-	modTime time.Time
 	entries map[npath]tarTypeflag
 }
 
@@ -73,24 +73,25 @@ func normalizePath(p string) npath {
 	return npath(p)
 }
 
-// NewBuilder returns a Builder that writes a tar archive to w.
+// NewBuilder returns a Builder that writes a tar archive to w, and whose
+// DefaultModTime is initialized to the current UTC time.
 func NewBuilder(w io.Writer) *Builder {
 	return &Builder{
-		tw:      tar.NewWriter(w),
-		modTime: time.Now().UTC(),
-		entries: make(map[npath]tarTypeflag),
+		DefaultModTime: time.Now().UTC(),
+		tw:             tar.NewWriter(w),
+		entries:        make(map[npath]tarTypeflag),
 	}
 }
 
 // AddContent adds the provided content to the archive as a file following the
-// semantics of Add, with mode 644 and a modification time set to the time at
-// which the Builder was created.
+// semantics of Add, with mode 644 and the Builder's DefaultModTime as the
+// modification time.
 func (b *Builder) AddContent(path string, content []byte) error {
 	return b.Add(path, File{
 		Reader:  bytes.NewReader(content),
 		Size:    int64(len(content)),
 		Mode:    0644,
-		ModTime: b.modTime,
+		ModTime: b.DefaultModTime,
 	})
 }
 
@@ -194,7 +195,7 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 	return b.tw.WriteHeader(&tar.Header{
 		Name:    string(parent) + "/",
 		Mode:    040755,
-		ModTime: b.modTime,
+		ModTime: b.DefaultModTime,
 	})
 }
 
