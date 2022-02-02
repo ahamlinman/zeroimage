@@ -129,8 +129,6 @@ Other notable caveats include, but are not limited to:
   this with the `timetzdata` build tag.)
 - There are no TLS root certificates in the image.
 
-## Future Work
-
-- Instead of building `FROM scratch` by default, provide a built-in minimal base
-  that removes some of the caveats noted above. For example, automatically
-  bundle a standard `/etc/passwd` and a known set of TLS roots by default.
+A [distroless][distroless] base image like `gcr.io/distroless/static` will
+provide all of this, while still omitting much of the overhead of a general
+purpose base image.
