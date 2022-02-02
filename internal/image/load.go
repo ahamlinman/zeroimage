@@ -334,7 +334,28 @@ func (l *loader) readJSONBlob(ctx context.Context, dgst digest.Digest, v interfa
 }
 
 func normalizeLayerMediaType(mediaType string) string {
-	// TODO: How certain is it that this kind of direct translation is safe?
+	// From my reading of both the Docker and OCI specifications, and my analysis
+	// of real-world Docker images, I don't expect any issues with this direct
+	// media type translation.
+	//
+	// https://github.com/moby/moby/blob/master/image/spec/v1.md
+	// https://github.com/opencontainers/image-spec/blob/main/layer.md
+	//
+	// One of the examples in the Docker (Moby) spec seems to imply that you don't
+	// actually need tar entries for newly added directories in the layer
+	// changeset, where the OCI spec is more explicit about this. However, these
+	// examples seem inconsistent with wording elsewhere in the Docker spec that
+	// refers to "files and directories:"
+	//
+	// - "looking for files and directories that have been added, modified, or
+	//   removed"
+	// - "added and modified files and directories in their entirety"
+	//
+	// In practice, it seems that Docker consistently includes changeset entries
+	// for newly added directories. Plus, both specs are clear that changesets are
+	// extracted as normal tar archives outside of the special handling of
+	// whiteout files, so I'd assume that runtimes have some general way to handle
+	// this weird situation if it comes up in a crafted image.
 	switch mediaType {
 	case "application/vnd.docker.image.rootfs.diff.tar.gzip":
 		return specsv1.MediaTypeImageLayerGzip
