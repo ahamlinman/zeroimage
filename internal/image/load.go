@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/opencontainers/go-digest"
@@ -367,10 +368,7 @@ func normalizeLayerMediaType(mediaType string) string {
 }
 
 func isNondistributableMediaType(mediaType string) bool {
-	// TODO: Parse the media type somehow for a more generic check?
-	if mediaType == specsv1.MediaTypeImageLayerNonDistributable ||
-		mediaType == specsv1.MediaTypeImageLayerNonDistributableGzip {
-		return true
-	}
-	return false
+	// This should also cover the "+gzip" and "+zstd" suffixes. I can't imagine
+	// the spec adding to the media subtype after the ".tar" part.
+	return strings.HasPrefix(mediaType, specsv1.MediaTypeImageLayerNonDistributable)
 }
