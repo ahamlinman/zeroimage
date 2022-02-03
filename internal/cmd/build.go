@@ -123,6 +123,7 @@ func loadBaseImage(platform specsv1.Platform) (image.Image, error) {
 	}
 
 	index = index.SelectByPlatform(platform)
+	// TODO: Separate cases for 0 and multiple matches.
 	if len(index) != 1 {
 		return image.Image{}, fmt.Errorf(
 			"could not find a single base image for %s",
@@ -158,7 +159,7 @@ func outputImage(img image.Image) error {
 
 func outputImageToRegistry(img image.Image) error {
 	log.Printf("Pushing image to registry: %s", buildPush)
-	return registry.PushImage(context.Background(), img, buildPush)
+	return registry.PushImage(context.TODO(), img, buildPush)
 }
 
 func outputImageToArchive(img image.Image) error {
