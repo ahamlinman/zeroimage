@@ -145,7 +145,12 @@ func (b *Builder) Add(path string, file fs.File) (err error) {
 	if err != nil {
 		return err
 	}
+
 	header.Name = string(np)
+	if stat.IsDir() && !strings.HasSuffix(header.Name, "/") {
+		header.Name += "/"
+	}
+
 	header.Uid = 0
 	header.Gid = 0
 	header.Uname = ""
@@ -194,7 +199,7 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 	b.entries[parent] = tar.TypeDir
 	return b.tw.WriteHeader(&tar.Header{
 		Name:    string(parent) + "/",
-		Mode:    040755,
+		Mode:    0755,
 		ModTime: b.DefaultModTime,
 	})
 }
