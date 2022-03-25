@@ -58,14 +58,15 @@ type Builder struct {
 // tarTypeflag matches the type of the Typeflag field in tar.Header.
 type tarTypeflag = byte
 
-// npath holds a normalized path: a Clean relative path separated by forward
+// npath holds a normalized path: a clean relative path separated by forward
 // slashes. Because an npath is relative, it contains no leading or trailing
 // slashes, and the root path is represented as ".".
 type npath string
 
-// normalizePath converts an arbitrary slash-separated path to an npath.
+// normalizePath creates an npath from an arbitrary slash-separated path,
+// interpreted relative to the root path.
 func normalizePath(p string) npath {
-	p = path.Clean(p)
+	p = path.Clean("/" + p)
 	p = strings.TrimPrefix(p, "/")
 	if p == "" {
 		p = "."
@@ -95,11 +96,11 @@ func (b *Builder) AddContent(path string, content []byte) error {
 	})
 }
 
-// Add adds the provided file to the archive at the provided path, creating any
-// necessary parent directories as described by Builder. Add preserves the size,
-// mode, and modification time reported by file.Stat, and may preserve some
-// fields of file.Stat.Sys, but does not preserve the original name, owner, or
-// group of the file.
+// Add adds a file to the archive at the provided path, cleaning the path and
+// creating missing parent directories as described by Builder. Add preserves
+// the size, mode, and modification time reported by file.Stat, and may preserve
+// some fields of file.Stat.Sys, but does not preserve the original name, owner,
+// or group of the file.
 //
 // When file represents a regular file, Add immediately copies its contents into
 // the archive.

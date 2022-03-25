@@ -44,6 +44,24 @@ func TestBuilder(t *testing.T) {
 				{Typeflag: tar.TypeDir, Name: "tmp/", Mode: 01777, ModTime: defaultModTime},
 			},
 		},
+		{
+			Description: "path normalization",
+			Entries: []testEntry{
+				{"etc/test1.conf", "test1"},
+				{"/etc/test2.conf", "test2"},
+				{"../../../etc/./test3.conf", "test3"},
+				{"./home/../etc/test4/.././test4.conf", "test4"},
+				{"/home/./", Dir{Mode: fs.ModeDir | 0755, ModTime: defaultModTime}},
+			},
+			WantHeaders: []tar.Header{
+				{Typeflag: tar.TypeDir, Name: "etc/", Mode: 0755, ModTime: defaultModTime},
+				{Typeflag: tar.TypeReg, Name: "etc/test1.conf", Size: 5, Mode: 0644, ModTime: defaultModTime},
+				{Typeflag: tar.TypeReg, Name: "etc/test2.conf", Size: 5, Mode: 0644, ModTime: defaultModTime},
+				{Typeflag: tar.TypeReg, Name: "etc/test3.conf", Size: 5, Mode: 0644, ModTime: defaultModTime},
+				{Typeflag: tar.TypeReg, Name: "etc/test4.conf", Size: 5, Mode: 0644, ModTime: defaultModTime},
+				{Typeflag: tar.TypeDir, Name: "home/", Mode: 0755, ModTime: defaultModTime},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
