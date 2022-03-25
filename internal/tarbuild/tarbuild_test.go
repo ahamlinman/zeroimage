@@ -62,6 +62,19 @@ func TestBuilder(t *testing.T) {
 				{Typeflag: tar.TypeDir, Name: "home/", Mode: 0755, ModTime: defaultModTime},
 			},
 		},
+		{
+			Description: "explicit duplicate file",
+			Entries:     []testEntry{{"test.txt", "test"}, {"test.txt", "oops"}},
+			WantError:   ErrDuplicateEntry,
+		},
+		{
+			Description: "duplicate in parent directory creation",
+			Entries: []testEntry{
+				{"/etc/conf.d", "whoops, i am a file"},
+				{"/etc/conf.d/tarbuild/50-default.conf", "this will not work"},
+			},
+			WantError: ErrDuplicateEntry,
+		},
 	}
 
 	for _, tc := range testCases {
