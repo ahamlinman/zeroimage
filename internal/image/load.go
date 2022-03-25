@@ -95,20 +95,21 @@ func (l *loader) InitRootIndex(ctx context.Context) error {
 		return err
 	}
 
-	var mediaType struct {
-		MediaType string `json:"mediaType"`
+	var root struct {
+		MediaType string          `json:"mediaType"`
+		Manifests json.RawMessage `json:"manifests"`
 	}
-	err = json.Unmarshal(rootContent, &mediaType)
+	err = json.Unmarshal(rootContent, &root)
 	if err != nil {
 		return err
 	}
 
-	if supportedIndexMediaTypes[mediaType.MediaType] {
+	if supportedIndexMediaTypes[root.MediaType] || len(root.Manifests) > 0 {
 		return json.Unmarshal(rootContent, &l.rootIndex)
-	} else if supportedManifestMediaTypes[mediaType.MediaType] {
+	} else if supportedManifestMediaTypes[root.MediaType] {
 		return l.initRootWithManifest(rootContent)
 	} else {
-		return fmt.Errorf("unsupported manifest type %s", mediaType.MediaType)
+		return fmt.Errorf("unsupported manifest type %s", root.MediaType)
 	}
 }
 
