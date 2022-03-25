@@ -75,6 +75,16 @@ func TestBuilder(t *testing.T) {
 			},
 			WantError: ErrDuplicateEntry,
 		},
+		{
+			Description: "directory at root of archive",
+			Entries:     []testEntry{{"/", Dir{Mode: fs.ModeDir | 0755, ModTime: defaultModTime}}},
+			WantError:   ErrEntryOutsideOfArchive,
+		},
+		{
+			Description: "file above root of archive",
+			Entries:     []testEntry{{"../", "test"}},
+			WantError:   ErrEntryOutsideOfArchive,
+		},
 	}
 
 	for _, tc := range testCases {

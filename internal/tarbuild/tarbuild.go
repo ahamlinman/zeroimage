@@ -21,8 +21,12 @@ var ErrBuilderClosed = errors.New("tarbuild: builder closed")
 // add multiple entries at the same path.
 var ErrDuplicateEntry = errors.New("duplicate entry")
 
-// AddError represents an error that occurred while adding the entry at Path to
-// a tar archive.
+// ErrEntryOutsideOfArchive is the cause of an AddError resulting from an
+// attempt to add an entry at or above the root of the archive.
+var ErrEntryOutsideOfArchive = errors.New("entry outside of archive")
+
+// AddError represents an error that occurred while adding an entry to an
+// archive using the given path.
 type AddError struct {
 	Path string
 	Err  error
@@ -115,17 +119,20 @@ func (b *Builder) Add(path string, file fs.File) (err error) {
 		return b.err
 	}
 
-	np := normalizePath(path)
-
 	defer func() {
 		if err != nil {
 			if aerr, ok := err.(AddError); ok {
 				b.err = aerr
 			} else {
-				b.err = AddError{string(np), err}
+				b.err = AddError{path, err}
 			}
 		}
 	}()
+
+	np := normalizePath(path)
+	if np == "." {
+		return ErrEntryOutsideOfArchive
+	}
 
 	if _, ok := b.entries[np]; ok {
 		return ErrDuplicateEntry
@@ -186,7 +193,7 @@ func (b *Builder) ensureParentDirectory(np npath) error {
 		if typeflag != tar.TypeDir {
 			return AddError{
 				Path: string(parent),
-				Err:  fmt.Errorf("%w: cannot add directory where non-directory exists", ErrDuplicateEntry),
+				Err:  fmt.Errorf("%w: creating parent directory where non-directory exists", ErrDuplicateEntry),
 			}
 		}
 		// Whoever added this parent should have filled out the rest of the chain.
