@@ -184,6 +184,7 @@ func (p *pusher) getBlobUploadURL(ctx context.Context) (u *url.URL, err error) {
 func (p *pusher) uploadManifest(ctx context.Context, img image.Image, configDesc specsv1.Descriptor) error {
 	manifest := specsv1.Manifest{
 		Versioned:   specs.Versioned{SchemaVersion: 2},
+		MediaType:   specsv1.MediaTypeImageManifest,
 		Config:      configDesc,
 		Annotations: img.Annotations,
 	}

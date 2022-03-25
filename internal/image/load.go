@@ -95,6 +95,9 @@ func (l *loader) InitRootIndex(ctx context.Context) error {
 		return err
 	}
 
+	// TODO: If the root manifest has a known digest, verify its contents against
+	// that digest.
+
 	var root struct {
 		MediaType string          `json:"mediaType"`
 		Manifests json.RawMessage `json:"manifests"`
@@ -109,7 +112,7 @@ func (l *loader) InitRootIndex(ctx context.Context) error {
 	} else if supportedManifestMediaTypes[root.MediaType] {
 		return l.initRootWithManifest(rootContent)
 	} else {
-		return fmt.Errorf("unsupported manifest type %s", root.MediaType)
+		return fmt.Errorf("unsupported manifest type %q", root.MediaType)
 	}
 }
 
@@ -323,6 +326,9 @@ func (l *loader) readJSONManifest(ctx context.Context, dgst digest.Digest, v int
 		return err
 	}
 	defer rdr.Close()
+
+	// TODO: Verify the raw manifest against the presented digest.
+
 	return json.NewDecoder(rdr).Decode(v)
 }
 
@@ -332,6 +338,9 @@ func (l *loader) readJSONBlob(ctx context.Context, dgst digest.Digest, v interfa
 		return err
 	}
 	defer rdr.Close()
+
+	// TODO: Verify the blob against the presented digest.
+
 	return json.NewDecoder(rdr).Decode(v)
 }
 

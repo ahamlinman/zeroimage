@@ -42,6 +42,7 @@ func (iw *imageWriter) WriteImage() error {
 
 	manifest := specsv1.Manifest{
 		Versioned:   specs.Versioned{SchemaVersion: 2},
+		MediaType:   specsv1.MediaTypeImageManifest,
 		Config:      iw.addJSONBlob(specsv1.MediaTypeImageConfig, iw.image.Config),
 		Annotations: iw.image.Annotations,
 	}
