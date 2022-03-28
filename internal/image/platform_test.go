@@ -21,14 +21,11 @@ func TestPlatform(t *testing.T) {
 			Input:        "linux/arm64/v8",
 			WantPlatform: specsv1.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
 		},
-		{
-			Input:     "linux",
-			WantError: true,
-		},
-		{
-			Input:     "linux/5.17/arm64/v8",
-			WantError: true,
-		},
+		{Input: "linux", WantError: true},
+		{Input: "linux/5.17/arm64/v8", WantError: true},
+		{Input: "linux/", WantError: true},
+		{Input: "/arm64", WantError: true},
+		{Input: "linux/arm/", WantError: true},
 	}
 
 	for _, tc := range testCases {

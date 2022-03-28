@@ -16,9 +16,20 @@ func ParsePlatform(ps string) (specsv1.Platform, error) {
 	}
 
 	p := specsv1.Platform{OS: parts[0], Architecture: parts[1]}
+	if p.OS == "" {
+		return specsv1.Platform{}, errors.New("missing OS in platform")
+	}
+	if p.Architecture == "" {
+		return specsv1.Platform{}, errors.New("missing architecture in platform")
+	}
+
 	if len(parts) == 3 {
 		p.Variant = parts[2]
+		if p.Variant == "" {
+			return specsv1.Platform{}, errors.New("empty variant in platform")
+		}
 	}
+
 	return p, nil
 }
 
