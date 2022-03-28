@@ -83,7 +83,7 @@ func runBuild(_ *cobra.Command, args []string) {
 	img.Config.History = append(img.Config.History, specsv1.History{
 		Created:   now(),
 		CreatedBy: "zeroimage",
-		Comment:   "entrypoint layer",
+		Comment:   "entrypoint: " + entrypointTargetPath,
 	})
 
 	img.Config.Created = now()
