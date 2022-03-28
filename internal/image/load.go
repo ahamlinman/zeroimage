@@ -311,7 +311,11 @@ func (l *loader) getManifest(ctx context.Context, dgst digest.Digest) (specsv1.M
 		return m.(specsv1.Manifest), nil
 	}
 
-	// TODO: Consider deduplicating concurrent reads for the same digest.
+	// In theory we could deduplicate concurrent reads for the same digest, but
+	// it's probably not worth it. It feels like concurrent operations would be
+	// more likely to touch different images at the same time than to touch the
+	// same image multiple times at once.
+
 	var manifest specsv1.Manifest
 	err := l.readJSONManifest(ctx, dgst, &manifest)
 	if err != nil {
@@ -327,7 +331,8 @@ func (l *loader) getConfig(ctx context.Context, dgst digest.Digest) (Config, err
 		return c.(Config), nil
 	}
 
-	// TODO: Consider deduplicating concurrent reads for the same digest.
+	// Above note about deduplication applies here too.
+
 	var config Config
 	err := l.readJSONBlob(ctx, dgst, &config)
 	if err != nil {
