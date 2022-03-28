@@ -84,6 +84,7 @@ func runBuild(_ *cobra.Command, args []string) {
 	}
 	builder := tarlayer.NewBuilder()
 	builder.Add(entrypointTargetPath, entrypoint)
+	entrypoint.Close()
 	layer, err := builder.Finish()
 	if err != nil {
 		log.Fatal("Failed to build entrypoint layer: ", err)
