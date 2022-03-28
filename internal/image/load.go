@@ -135,8 +135,8 @@ func (l *loader) initRootIndex(ctx context.Context) error {
 	}
 
 	var root struct {
-		MediaType string          `json:"mediaType"`
-		Manifests json.RawMessage `json:"manifests"`
+		MediaType string            `json:"mediaType"`
+		Manifests []json.RawMessage `json:"manifests"`
 	}
 	err = json.Unmarshal(rootContent, &root)
 	if err != nil {
