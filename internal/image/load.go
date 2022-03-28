@@ -62,10 +62,7 @@ type Loader interface {
 // Loader to access image configuration and filesystem layer blobs.
 func Load(ctx context.Context, l Loader) (Index, error) {
 	loader := loader{Loader: l}
-	if err := loader.InitRootIndex(ctx); err != nil {
-		return nil, err
-	}
-	return loader.BuildIndex(ctx)
+	return loader.buildFullIndex(ctx)
 }
 
 type loader struct {
@@ -79,11 +76,39 @@ type loader struct {
 	// with sync.Map: each entry only needs to be written once, and different
 	// goroutines are likely touching different images in the index, which means
 	// they would touch disjoint keys in these maps.
-	manifests sync.Map
-	configs   sync.Map
+	manifestsByDigest sync.Map
+	configsByDigest   sync.Map
 }
 
-func (l *loader) InitRootIndex(ctx context.Context) error {
+func (l *loader) buildFullIndex(ctx context.Context) (Index, error) {
+	err := l.initRootIndex(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	manifestDescriptors, err := l.getAllManifestDescriptors(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	idx := make(Index, len(manifestDescriptors))
+	for i, md := range manifestDescriptors {
+		md := md
+		platform, err := l.getPlatformByManifestDescriptor(ctx, md)
+		if err != nil {
+			return nil, err
+		}
+		idx[i] = IndexEntry{
+			Platform: platform,
+			GetImage: func(ctx context.Context) (Image, error) {
+				return l.buildImage(ctx, md)
+			},
+		}
+	}
+	return idx, nil
+}
+
+func (l *loader) initRootIndex(ctx context.Context) error {
 	rdr, err := l.OpenRootManifest(ctx)
 	if err != nil {
 		return err
@@ -110,13 +135,13 @@ func (l *loader) InitRootIndex(ctx context.Context) error {
 	if supportedIndexMediaTypes[root.MediaType] || len(root.Manifests) > 0 {
 		return json.Unmarshal(rootContent, &l.rootIndex)
 	} else if supportedManifestMediaTypes[root.MediaType] {
-		return l.initRootWithManifest(rootContent)
+		return l.synthesizeRootIndexFromManifest(rootContent)
 	} else {
 		return fmt.Errorf("unsupported manifest type %q", root.MediaType)
 	}
 }
 
-func (l *loader) initRootWithManifest(content []byte) error {
+func (l *loader) synthesizeRootIndexFromManifest(content []byte) error {
 	var manifest specsv1.Manifest
 	err := json.Unmarshal(content, &manifest)
 	if err != nil {
@@ -124,7 +149,7 @@ func (l *loader) initRootWithManifest(content []byte) error {
 	}
 
 	dgst := digest.FromBytes(content)
-	l.manifests.Store(dgst, manifest)
+	l.manifestsByDigest.Store(dgst, manifest)
 
 	// Depending on the implementation of the loader, this might implicitly rely
 	// on manifest loads always checking the "cache" first. A remote registry
@@ -140,29 +165,6 @@ func (l *loader) initRootWithManifest(content []byte) error {
 		}},
 	}
 	return nil
-}
-
-func (l *loader) BuildIndex(ctx context.Context) (Index, error) {
-	manifestDescriptors, err := l.getAllManifestDescriptors(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	idx := make(Index, len(manifestDescriptors))
-	for i, md := range manifestDescriptors {
-		md := md
-		platform, err := l.getPlatformByManifestDescriptor(ctx, md)
-		if err != nil {
-			return nil, err
-		}
-		idx[i] = IndexEntry{
-			Platform: platform,
-			GetImage: func(ctx context.Context) (Image, error) {
-				return l.BuildImage(ctx, md)
-			},
-		}
-	}
-	return idx, nil
 }
 
 func (l *loader) getAllManifestDescriptors(ctx context.Context) ([]specsv1.Descriptor, error) {
@@ -214,7 +216,7 @@ func (l *loader) getNestedIndex(ctx context.Context, dgst digest.Digest) (specsv
 	return nested, nil
 }
 
-func (l *loader) BuildImage(ctx context.Context, manifestDescriptor specsv1.Descriptor) (Image, error) {
+func (l *loader) buildImage(ctx context.Context, manifestDescriptor specsv1.Descriptor) (Image, error) {
 	platform, err := l.getPlatformByManifestDescriptor(ctx, manifestDescriptor)
 	if err != nil {
 		return Image{}, err
@@ -289,34 +291,34 @@ func (l *loader) getPlatformByManifestDescriptor(ctx context.Context, md specsv1
 }
 
 func (l *loader) getManifest(ctx context.Context, dgst digest.Digest) (specsv1.Manifest, error) {
-	if m, ok := l.manifests.Load(dgst); ok {
+	if m, ok := l.manifestsByDigest.Load(dgst); ok {
 		return m.(specsv1.Manifest), nil
 	}
 
-	// TODO: Deduplicate these reads?
+	// TODO: Consider deduplicating concurrent reads for the same digest.
 	var manifest specsv1.Manifest
 	err := l.readJSONManifest(ctx, dgst, &manifest)
 	if err != nil {
 		return specsv1.Manifest{}, err
 	}
 
-	m, _ := l.manifests.LoadOrStore(dgst, manifest)
+	m, _ := l.manifestsByDigest.LoadOrStore(dgst, manifest)
 	return m.(specsv1.Manifest), nil
 }
 
 func (l *loader) getConfig(ctx context.Context, dgst digest.Digest) (Config, error) {
-	if c, ok := l.configs.Load(dgst); ok {
+	if c, ok := l.configsByDigest.Load(dgst); ok {
 		return c.(Config), nil
 	}
 
-	// TODO: Deduplicate these reads?
+	// TODO: Consider deduplicating concurrent reads for the same digest.
 	var config Config
 	err := l.readJSONBlob(ctx, dgst, &config)
 	if err != nil {
 		return Config{}, err
 	}
 
-	c, _ := l.configs.LoadOrStore(dgst, config)
+	c, _ := l.configsByDigest.LoadOrStore(dgst, config)
 	return c.(Config), nil
 }
 
@@ -327,9 +329,17 @@ func (l *loader) readJSONManifest(ctx context.Context, dgst digest.Digest, v int
 	}
 	defer rdr.Close()
 
-	// TODO: Verify the raw manifest against the presented digest.
+	verifier := dgst.Verifier()
 
-	return json.NewDecoder(rdr).Decode(v)
+	err = json.NewDecoder(io.TeeReader(rdr, verifier)).Decode(v)
+	if err != nil {
+		return err
+	}
+
+	if !verifier.Verified() {
+		return fmt.Errorf("content of manifest %v does not match digest", dgst)
+	}
+	return nil
 }
 
 func (l *loader) readJSONBlob(ctx context.Context, dgst digest.Digest, v interface{}) error {
@@ -339,9 +349,17 @@ func (l *loader) readJSONBlob(ctx context.Context, dgst digest.Digest, v interfa
 	}
 	defer rdr.Close()
 
-	// TODO: Verify the blob against the presented digest.
+	verifier := dgst.Verifier()
 
-	return json.NewDecoder(rdr).Decode(v)
+	err = json.NewDecoder(io.TeeReader(rdr, verifier)).Decode(v)
+	if err != nil {
+		return err
+	}
+
+	if !verifier.Verified() {
+		return fmt.Errorf("content of blob %v does not match digest", dgst)
+	}
+	return nil
 }
 
 func normalizeLayerMediaType(mediaType string) string {
