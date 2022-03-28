@@ -264,6 +264,11 @@ func (l *loader) buildImage(ctx context.Context, manifestDescriptor specsv1.Desc
 			Descriptor: layerDesc,
 			DiffID:     config.RootFS.DiffIDs[i],
 			OpenBlob: func(ctx context.Context) (io.ReadCloser, error) {
+				// TODO: Should zeroimage try to validate layer tarballs against their
+				// digests? At first glance it seems unnecessary. Unlike manifests and
+				// configs, zeroimage doesn't use externally-sourced layer tarballs for
+				// its own purposes. It simply forwards them on to some other place,
+				// which I would hope is doing its own checks on the received content.
 				return l.OpenBlob(ctx, layerDesc.Digest)
 			},
 		}
