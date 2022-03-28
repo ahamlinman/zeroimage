@@ -134,13 +134,22 @@ func loadBaseImage(platform specsv1.Platform) (image.Image, error) {
 	}
 
 	index = index.SelectByPlatform(platform)
-	// TODO: Separate cases for 0 and multiple matches.
-	if len(index) != 1 {
+	if len(index) == 0 {
+		return image.Image{}, fmt.Errorf("image does not support %s", image.FormatPlatform(platform))
+	}
+	if len(index) > 1 {
+		// TODO: What is Docker's behavior here? Does it parse the variants to pick
+		// the highest version, or does it just pick the last one in the list?
+		matches := make([]string, len(index))
+		for i, entry := range index {
+			matches[i] = image.FormatPlatform(entry.Platform)
+		}
 		return image.Image{}, fmt.Errorf(
-			"could not find a single base image for %s",
-			image.FormatPlatform(platform),
+			"cannot decide between multiple matches for %s: %v",
+			image.FormatPlatform(platform), matches,
 		)
 	}
+
 	return index[0].GetImage(context.TODO())
 }
 
