@@ -43,6 +43,17 @@ type loader struct {
 	Client http.Client
 }
 
+func (l loader) RootDigest() (dgst digest.Digest, ok bool) {
+	if ndgst, ok := l.Name.(name.Digest); ok {
+		dgst, err := digest.Parse(ndgst.DigestStr())
+		if err != nil {
+			panic(fmt.Errorf("invalid digest in remote image reference: %v", err))
+		}
+		return dgst, true
+	}
+	return digest.FromString(""), false
+}
+
 func (l loader) OpenRootManifest(ctx context.Context) (io.ReadCloser, error) {
 	req := l.newGetRequest(ctx, "manifests", l.Name.Identifier())
 	req.Header.Set("Accept", strings.Join(acceptedManifestTypes, ","))

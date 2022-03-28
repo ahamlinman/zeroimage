@@ -44,6 +44,11 @@ func toStringSet(ss []string) map[string]bool {
 // Loader represents a source of manifest and blob information for container
 // images.
 type Loader interface {
+	// RootDigest returns the digest of the raw contents of the JSON-encoded
+	// entrypoint manifest if it is known in advance. If the digest is not known,
+	// RootDigest returns ok == false along with an arbitrary but valid digest
+	// value (for example, the digest of an empty input).
+	RootDigest() (dgst digest.Digest, ok bool)
 	// OpenRootManifest returns a reader for a JSON-encoded entrypoint manifest,
 	// which may be an OCI image index, Docker v2 manifest list, OCI image
 	// manifest, or Docker v2 image manifest.
@@ -115,13 +120,19 @@ func (l *loader) initRootIndex(ctx context.Context) error {
 	}
 	defer rdr.Close()
 
+	var verifier digest.Verifier
+	if dgst, ok := l.RootDigest(); ok {
+		verifier = dgst.Verifier()
+		rdr = io.NopCloser(io.TeeReader(rdr, verifier))
+	}
+
 	rootContent, err := io.ReadAll(rdr)
 	if err != nil {
 		return err
 	}
-
-	// TODO: If the root manifest has a known digest, verify its contents against
-	// that digest.
+	if verifier != nil && !verifier.Verified() {
+		return fmt.Errorf("content of manifest does not match digest")
+	}
 
 	var root struct {
 		MediaType string          `json:"mediaType"`

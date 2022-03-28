@@ -43,6 +43,10 @@ type loadedLayout struct {
 	Blobs  map[digest.Digest][]byte
 }
 
+func (ll loadedLayout) RootDigest() (dgst digest.Digest, ok bool) {
+	return digest.FromString(""), false
+}
+
 func (ll loadedLayout) OpenRootManifest(_ context.Context) (io.ReadCloser, error) {
 	index, err := json.Marshal(ll.Index)
 	if err != nil {
