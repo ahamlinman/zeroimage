@@ -55,6 +55,7 @@ func (iw *imageWriter) WriteImage() error {
 
 	iw.addJSONFile("index.json", specsv1.Index{
 		Versioned: specs.Versioned{SchemaVersion: 2},
+		MediaType: specsv1.MediaTypeImageIndex,
 		Manifests: []specsv1.Descriptor{manifestDesc},
 	})
 
