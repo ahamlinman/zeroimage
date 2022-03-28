@@ -155,7 +155,7 @@ func (b *Builder) Add(path string, file fs.File) (err error) {
 	}
 
 	header.Name = string(np)
-	if stat.IsDir() && !strings.HasSuffix(header.Name, "/") {
+	if stat.IsDir() {
 		header.Name += "/"
 	}
 
