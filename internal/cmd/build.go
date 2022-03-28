@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
@@ -25,7 +26,16 @@ var buildCmd = &cobra.Command{
 	Run:   runBuild,
 }
 
-var defaultPlatform = runtime.GOOS + "/" + runtime.GOARCH
+var (
+	defaultPlatform  = runtime.GOOS + "/" + runtime.GOARCH
+	layerCreatorName = "zeroimage"
+)
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		layerCreatorName = info.Main.Path
+	}
+}
 
 var (
 	buildFrom        string
@@ -82,7 +92,7 @@ func runBuild(_ *cobra.Command, args []string) {
 	img.AppendLayer(layer)
 	img.Config.History = append(img.Config.History, specsv1.History{
 		Created:   now(),
-		CreatedBy: "zeroimage",
+		CreatedBy: layerCreatorName,
 		Comment:   "entrypoint: " + entrypointTargetPath,
 	})
 
