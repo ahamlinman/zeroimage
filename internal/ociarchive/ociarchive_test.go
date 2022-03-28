@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	// Required by github.com/opencontainers/go-digest
+	_ "crypto/sha256"
+	_ "crypto/sha512"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
