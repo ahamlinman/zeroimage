@@ -7,6 +7,8 @@ import (
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
+// TODO: Replace all of this with github.com/containerd/containerd/platforms.
+
 // ParsePlatform parses an image platform from a slash separated format
 // consisting of the OS, architecture, and optional variant.
 func ParsePlatform(ps string) (specsv1.Platform, error) {
