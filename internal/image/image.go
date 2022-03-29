@@ -6,7 +6,9 @@ package image
 import (
 	"context"
 	"io"
+	"sort"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/opencontainers/go-digest"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -22,34 +24,24 @@ type IndexEntry struct {
 	GetImage func(context.Context) (Image, error)
 }
 
-// SelectByPlatform returns a new Index of the images in idx where all non empty
-// fields of platform are an exact match or subset of the image's Platform
-// values.
-//
-// Examples
-//
-// If idx references images for both the v6 and v7 variants of the linux/arm
-// platform, and platform is linux/arm, SelectByPlatform will return an index
-// referencing both images.
-//
-// If idx only references an image for the v8 variant of the linux/arm64
-// platform, and platform is linux/arm64, SelectByPlatform will return an index
-// referencing only that image.
-//
-// If idx only references an image for the v8 variant of the linux/arm64
-// platform, and platform is linux/arm64/v9, SelectByPlatform will return an
-// empty index.
-//
-// If idx includes Windows images and platform.OSFeatures includes "win32k",
-// SelectByPlatform will only return images that include the "win32k" feature.
-// The returned images may include other OS features as well.
+// SelectByPlatform returns a new Index containing the subset of images in idx
+// that are compatible with the provided platform, in order of decreasing
+// preference, following standard platform matching rules as defined by
+// https://pkg.go.dev/github.com/containerd/containerd/platforms.
 func (idx Index) SelectByPlatform(platform specsv1.Platform) Index {
+	matcher := platforms.Only(platform)
+
 	var selected Index
 	for _, img := range idx {
-		if platformMatches(platform, img.Platform) {
+		if matcher.Match(img.Platform) {
 			selected = append(selected, img)
 		}
 	}
+
+	sort.Slice(selected, func(i, j int) bool {
+		return matcher.Less(selected[i].Platform, selected[j].Platform)
+	})
+
 	return selected
 }
 

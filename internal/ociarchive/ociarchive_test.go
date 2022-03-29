@@ -11,6 +11,7 @@ import (
 	_ "crypto/sha256"
 	_ "crypto/sha512"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -69,7 +70,7 @@ func TestLoadMultiarchArchive(t *testing.T) {
 
 	gotPlatforms := make([]string, len(index))
 	for i, entry := range index {
-		gotPlatforms[i] = image.FormatPlatform(entry.Platform)
+		gotPlatforms[i] = platforms.Format(entry.Platform)
 	}
 	wantPlatforms := []string{
 		"linux/amd64", "linux/arm/v5", "linux/arm/v7", "linux/arm64/v8",

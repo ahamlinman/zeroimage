@@ -6,10 +6,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"time"
 
+	"github.com/containerd/containerd/platforms"
 	specsv1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/spf13/cobra"
 
@@ -27,7 +27,7 @@ var buildCmd = &cobra.Command{
 }
 
 var (
-	defaultPlatform  = runtime.GOOS + "/" + runtime.GOARCH
+	defaultPlatform  = platforms.Format(platforms.DefaultSpec())
 	layerCreatorName = "zeroimage"
 )
 
@@ -67,7 +67,7 @@ func runBuild(_ *cobra.Command, args []string) {
 		buildOutput = entrypointSourcePath + ".tar"
 	}
 
-	platform, err := image.ParsePlatform(buildPlatform)
+	platform, err := platforms.Parse(buildPlatform)
 	if err != nil {
 		log.Fatal("Could not parse target platform: ", err)
 	}
@@ -135,21 +135,10 @@ func loadBaseImage(platform specsv1.Platform) (image.Image, error) {
 
 	index = index.SelectByPlatform(platform)
 	if len(index) == 0 {
-		return image.Image{}, fmt.Errorf("image does not support %s", image.FormatPlatform(platform))
-	}
-	if len(index) > 1 {
-		// TODO: What is Docker's behavior here? Does it parse the variants to pick
-		// the highest version, or does it just pick the last one in the list?
-		matches := make([]string, len(index))
-		for i, entry := range index {
-			matches[i] = image.FormatPlatform(entry.Platform)
-		}
-		return image.Image{}, fmt.Errorf(
-			"cannot decide between multiple matches for %s: %v",
-			image.FormatPlatform(platform), matches,
-		)
+		return image.Image{}, fmt.Errorf("image does not support %s", platforms.Format(platform))
 	}
 
+	log.Printf("Selecting base image platform: %s", platforms.Format(index[0].Platform))
 	return index[0].GetImage(context.TODO())
 }
 
