@@ -51,5 +51,5 @@ func runLogout(_ *cobra.Command, args []string) {
 		log.Fatal("Unable to erase login credentials: ", err)
 	}
 
-	log.Print("Removed login credentials from ", conf.GetFilename())
+	log.Print("Removed login credentials from Docker configuration")
 }

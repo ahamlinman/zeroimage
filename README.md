@@ -47,7 +47,9 @@ shown in the examples below.
 zeroimage uses your local Docker login credentials (the same credentials managed
 by `docker login`) to authenticate with remote registries. You can also use
 `zeroimage login` and `zeroimage logout` to manage these credentials. See the
-CLI help for these commands for details.
+CLI help for these commands for details. Note that if you use Docker Desktop,
+you may need to have Docker running for zeroimage to access the Docker
+credential store, even though zeroimage does not rely on Docker for builds.
 
 **Example:** Publish an image with a [distroless][distroless] base layer, which
 contains a basic Linux system layout but no shell or package manager:

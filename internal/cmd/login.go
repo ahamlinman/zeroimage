@@ -80,5 +80,5 @@ func runLogin(_ *cobra.Command, args []string) {
 		log.Fatal("Unable to save login credentials: ", err)
 	}
 
-	log.Print("Wrote login credentials to ", conf.GetFilename())
+	log.Print("Login credentials saved to Docker configuration")
 }
