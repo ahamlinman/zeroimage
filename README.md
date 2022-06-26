@@ -1,3 +1,20 @@
+# zeroimage is no longer maintained
+
+I created zeroimage for two reasons:
+
+1. To learn more about the internals of the modern container ecosystem. For the
+   moment, I'm satisfied with what I've accomplished here.
+2. To deploy binaries for a small handful of image-based AWS Lambda functions.
+   I've come to the conclusion that standard Lambda `.zip` archives are a far
+   better fit for my use cases, as they are vastly simpler to work with and I
+   haven't had a need for the full power of Lambda's container image support.
+
+I will no longer maintain zeroimage moving forward, but will keep this version
+available to the public under the terms of the MIT License in the hope that it
+may be useful as a reference or basis for other work.
+
+---
+
 # zeroimage
 
 ```sh
@@ -18,9 +35,6 @@ zeroimage is a lightweight container image builder for single-binary programs.
 It can produce single-layer `FROM scratch`-style images, or extend an existing
 base image to include your program, without ever touching a full container
 runtime.
-
-**WARNING:** The zeroimage CLI is unstable, and subject to change. Be careful
-with any kind of automation around zeroimage.
 
 ### Why zeroimage?
 
